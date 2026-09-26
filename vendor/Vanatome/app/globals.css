@@ -1562,3 +1562,101 @@ button {
     scroll-behavior: auto !important;
   }
 }
+
+/* AnatomyLens visual theme: color-only overrides for the existing Vanatome UI. */
+.app-shell {
+  background:
+    linear-gradient(rgba(0, 212, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.025) 1px, transparent 1px),
+    radial-gradient(circle at 50% 42%, #111827 0%, #0a0e1a 50%, #070b16 100%) !important;
+}
+
+.ambient-one {
+  background: #00d4ff !important;
+}
+
+.ambient-two {
+  background: #ff6b35 !important;
+}
+
+.topbar {
+  background: rgba(10, 14, 26, 0.9) !important;
+}
+
+.brand-mark,
+.icon-button,
+.reset-view-button,
+.panel-action,
+.viewer-controls,
+.bundle-switching,
+.viewer-context-menu,
+.search-box {
+  border-color: rgba(0, 212, 255, 0.22) !important;
+  background-color: rgba(17, 24, 39, 0.78) !important;
+}
+
+.brand-mark {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.14), rgba(0, 212, 255, 0.035)) !important;
+  box-shadow: 0 0 25px rgba(0, 212, 255, 0.18), inset 0 0 15px rgba(0, 212, 255, 0.06) !important;
+}
+
+.brand-subtitle,
+.rail-heading,
+.eyebrow,
+.data-label,
+.panel-code,
+.item-copy small,
+.viewer-controls,
+.bundle-switching,
+.search-box,
+.panel-action {
+  color: #94a3b8 !important;
+}
+
+.left-rail,
+.info-panel {
+  background: rgba(17, 24, 39, 0.92) !important;
+}
+
+.search-box {
+  background: rgba(13, 20, 36, 0.9) !important;
+}
+
+.structure-item,
+.structure-children,
+.data-block,
+.viewer-context-heading,
+.viewer-context-menu button {
+  border-color: rgba(0, 212, 255, 0.12) !important;
+}
+
+.structure-item:hover,
+.viewer-context-menu button:hover,
+.viewer-context-menu button:focus-visible {
+  background: rgba(0, 212, 255, 0.08) !important;
+}
+
+.structure-item.active {
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.16), rgba(0, 212, 255, 0.025)) !important;
+}
+
+.viewer-context-menu {
+  background: linear-gradient(145deg, rgba(17, 24, 39, 0.98), rgba(10, 14, 26, 0.98)) !important;
+}
+
+.viewer-context-heading strong,
+.viewer-context-menu button strong,
+.info-panel h2,
+.brand-name {
+  color: #e2e8f0 !important;
+}
+
+.summary,
+.data-block p {
+  color: #cbd5e1 !important;
+}
+
+.footer {
+  background: #070b16 !important;
+  color: #64748b !important;
+}
