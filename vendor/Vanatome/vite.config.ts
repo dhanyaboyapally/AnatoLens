@@ -18,6 +18,9 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    optimizeDeps: {
+      include: ["three", "@react-three/fiber", "@react-three/drei"],
+    },
     server: usePolling
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
