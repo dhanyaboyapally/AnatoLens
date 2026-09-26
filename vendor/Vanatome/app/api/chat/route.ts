@@ -21,7 +21,7 @@ const structureSchema = z.object({
 });
 
 const requestSchema = z.object({
-  messages: z.array(z.unknown()),
+  messages: z.array(z.unknown()).max(40),
   selectedStructure: structureSchema.nullable(),
   visibleSystems: z.array(z.string()),
   mode: z.string(),
@@ -105,7 +105,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const parsed = requestSchema.safeParse(await request.json());
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON request." }, { status: 400 });
+  }
+
+  const parsed = requestSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: "Invalid anatomy chat request." }, { status: 400 });
   }
