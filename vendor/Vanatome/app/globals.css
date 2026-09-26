@@ -2092,6 +2092,17 @@ button {
   background: rgba(0, 212, 255, 0.2);
 }
 
+.quiz-primary-action:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.quiz-error {
+  margin: 0.85rem 0 0;
+  color: #ff9d9d;
+  font: 11px/1.5 var(--font-geist-sans);
+}
+
 .quiz-meta,
 .quiz-progress {
   display: flex;
