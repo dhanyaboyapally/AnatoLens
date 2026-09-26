@@ -1768,6 +1768,12 @@ button {
   font: 10px/1.4 var(--font-geist-sans);
 }
 
+.sticky-notes-error {
+  margin: 0.6rem 0 0;
+  color: #fda4af;
+  font: 10px/1.4 var(--font-geist-sans);
+}
+
 .sticky-notes-colors {
   display: flex;
   gap: 0.5rem;
