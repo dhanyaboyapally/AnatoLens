@@ -25,6 +25,7 @@ import {
   UserRound,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AtlasLoaderError,
@@ -285,6 +286,7 @@ function LoadedAnatomyExplorer({
     mode?: SystemLoadMode,
   ) => void;
 }) {
+  const router = useRouter();
   const anatomy = useMemo<AnatomyData>(
     () => createAnatomyData(bundles),
     [bundles],
@@ -606,9 +608,12 @@ function LoadedAnatomyExplorer({
           <button
             className="icon-button account-button"
             type="button"
-            onClick={() => setAuthOpen(true)}
-            aria-label={authUser ? "Open account" : "Sign in or create an account"}
-            title={authUser?.email ?? "Sign in or create an account"}
+            onClick={() => {
+              if (authUser) router.push("/progress");
+              else setAuthOpen(true);
+            }}
+            aria-label={authUser ? "Open learning progress" : "Sign in or create an account"}
+            title={authUser ? "Open learning progress" : "Sign in or create an account"}
           >
             <UserRound size={18} />
           </button>
