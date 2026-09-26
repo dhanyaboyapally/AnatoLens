@@ -1660,3 +1660,55 @@ button {
   background: #070b16 !important;
   color: #64748b !important;
 }
+
+.detail-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin: -0.5rem 0 1.25rem;
+  padding: 0.25rem;
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  background: rgba(13, 20, 36, 0.88);
+}
+
+.detail-tabs button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font: 9px var(--font-geist-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.detail-tabs button:hover,
+.detail-tabs button.active {
+  border-color: rgba(0, 212, 255, 0.32);
+  background: rgba(0, 212, 255, 0.1);
+  color: #00d4ff;
+}
+
+.info-panel.ai-panel {
+  padding: 1.25rem 0 0;
+  overflow: hidden;
+}
+
+.ai-panel .detail-tabs {
+  margin: 0 1.25rem 0.75rem;
+}
+
+.ai-tab-content {
+  min-height: 0;
+  height: calc(100% - 3.5rem);
+  overflow: hidden;
+}
+
+.ai-tab-content > div {
+  min-height: 0;
+  height: 100%;
+}
