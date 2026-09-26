@@ -1,35 +1,43 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { StickyNote, X, Plus, GripVertical, Pencil, Check } from 'lucide-react'
+"use client";
 
-interface Note {
-  id: string
-  text: string
-  x: number   // px from left of viewport
-  y: number   // px from top of viewport
-  color: string
-  createdAt: number
-}
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Check, GripVertical, Pencil, Plus, StickyNote, X } from "lucide-react";
+
+type NoteOwner = { id: string; name: string };
+
+type Note = {
+  id: string;
+  structureId: string;
+  structureName: string;
+  text: string;
+  x: number;
+  y: number;
+  color: string;
+};
 
 const NOTE_COLORS = [
-  { bg: '#fef08a', border: '#ca8a04', text: '#713f12', name: 'yellow' },
-  { bg: '#bfdbfe', border: '#3b82f6', text: '#1e3a5f', name: 'blue'   },
-  { bg: '#bbf7d0', border: '#22c55e', text: '#14532d', name: 'green'  },
-  { bg: '#fecaca', border: '#ef4444', text: '#7f1d1d', name: 'red'    },
-  { bg: '#e9d5ff', border: '#a855f7', text: '#4a1d96', name: 'purple' },
-]
+  { bg: "#fef08a", border: "#ca8a04", text: "#713f12", name: "yellow" },
+  { bg: "#bfdbfe", border: "#3b82f6", text: "#1e3a5f", name: "blue" },
+  { bg: "#bbf7d0", border: "#22c55e", text: "#14532d", name: "green" },
+  { bg: "#fecaca", border: "#ef4444", text: "#7f1d1d", name: "red" },
+  { bg: "#e9d5ff", border: "#a855f7", text: "#4a1d96", name: "purple" },
+];
 
-const STORAGE_KEY = 'anatomyai_sticky_notes'
+const STORAGE_KEY = "anatomylens_sticky_notes";
 
 function loadNotes(): Note[] {
+  if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    return stored ? (JSON.parse(stored) as Note[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 function saveNotes(notes: Note[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes))
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
 }
 
 function StickyNoteCard({
@@ -37,230 +45,172 @@ function StickyNoteCard({
   onDelete,
   onUpdate,
 }: {
-  note: Note
-  onDelete: (id: string) => void
-  onUpdate: (id: string, text: string, x: number, y: number) => void
+  note: Note;
+  onDelete: (id: string) => void;
+  onUpdate: (id: string, text: string, x: number, y: number) => void;
 }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft]     = useState(note.text)
-  const [pos, setPos]         = useState({ x: note.x, y: note.y })
-  const dragging = useRef(false)
-  const offset   = useRef({ ox: 0, oy: 0 })
-  const textRef  = useRef<HTMLTextAreaElement>(null)
-  const col = NOTE_COLORS.find(c => c.name === note.color) ?? NOTE_COLORS[0]
+  const color = NOTE_COLORS.find((item) => item.name === note.color) ?? NOTE_COLORS[0];
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(note.text);
+  const [position, setPosition] = useState({ x: note.x, y: note.y });
+  const dragging = useRef(false);
+  const offset = useRef({ x: 0, y: 0 });
+  const textRef = useRef<HTMLTextAreaElement>(null);
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('textarea, button')) return
-    dragging.current = true
-    offset.current = { ox: e.clientX - pos.x, oy: e.clientY - pos.y }
-    e.preventDefault()
-  }, [pos])
+  const startDragging = (event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button, textarea")) return;
+    dragging.current = true;
+    offset.current = {
+      x: event.clientX - position.x,
+      y: event.clientY - position.y,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
 
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!dragging.current) return
-      const nx = e.clientX - offset.current.ox
-      const ny = e.clientY - offset.current.oy
-      setPos({ x: nx, y: ny })
-    }
-    const onUp = () => {
-      if (dragging.current) {
-        dragging.current = false
-        setPos(p => { onUpdate(note.id, draft, p.x, p.y); return p })
-      }
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-  }, [note.id, draft, onUpdate])
+  const moveNote = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return;
+    setPosition({
+      x: Math.max(8, event.clientX - offset.current.x),
+      y: Math.max(8, event.clientY - offset.current.y),
+    });
+  };
+
+  const finishDragging = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    onUpdate(note.id, draft, position.x, position.y);
+  };
 
   const saveEdit = () => {
-    setEditing(false)
-    onUpdate(note.id, draft, pos.x, pos.y)
-  }
+    setEditing(false);
+    onUpdate(note.id, draft, position.x, position.y);
+  };
 
-  useEffect(() => { if (editing) textRef.current?.focus() }, [editing])
+  useEffect(() => {
+    if (editing) textRef.current?.focus();
+  }, [editing]);
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.8, y: -10 }}
+      className="sticky-note-card"
+      initial={{ opacity: 0, scale: 0.85, y: -8 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.8, y: -10 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-      style={{
-        position: 'fixed',
-        left: pos.x,
-        top: pos.y,
-        zIndex: 50,
-        width: 200,
-        userSelect: 'none',
-      }}
+      exit={{ opacity: 0, scale: 0.85, y: -8 }}
+      style={{ left: position.x, top: position.y, backgroundColor: color.bg, borderColor: color.border }}
+      onPointerDown={startDragging}
+      onPointerMove={moveNote}
+      onPointerUp={finishDragging}
+      onPointerCancel={finishDragging}
     >
-      <div
-        className="rounded-xl shadow-2xl overflow-hidden"
-        style={{ border: `1.5px solid ${col.border}40`, backgroundColor: col.bg }}
-        onMouseDown={onMouseDown}
-      >
-        {/* Drag handle + controls */}
-        <div
-          className="flex items-center gap-1 px-2 py-1.5 cursor-grab active:cursor-grabbing"
-          style={{ backgroundColor: `${col.border}22`, borderBottom: `1px solid ${col.border}30` }}
-        >
-          <GripVertical size={12} style={{ color: col.text, opacity: 0.4 }} />
-          <div className="flex-1" />
-          <button
-            onClick={() => { setEditing(!editing); setDraft(note.text) }}
-            className="w-5 h-5 rounded flex items-center justify-center transition-opacity hover:opacity-80"
-            title="Edit"
-          >
-            {editing
-              ? <Check size={11} style={{ color: col.text }} />
-              : <Pencil size={11} style={{ color: col.text, opacity: 0.5 }} />
-            }
-          </button>
-          <button
-            onClick={() => onDelete(note.id)}
-            className="w-5 h-5 rounded flex items-center justify-center transition-opacity hover:opacity-80"
-            title="Delete note"
-          >
-            <X size={11} style={{ color: col.text, opacity: 0.5 }} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-2.5">
-          {editing ? (
-            <textarea
-              ref={textRef}
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onBlur={saveEdit}
-              onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) saveEdit() }}
-              rows={4}
-              placeholder="Type your noteâ€¦"
-              className="w-full resize-none text-xs outline-none rounded bg-transparent"
-              style={{ color: col.text, caretColor: col.border }}
-            />
-          ) : (
-            <p
-              className="text-xs leading-relaxed whitespace-pre-wrap break-words min-h-[52px] cursor-text"
-              style={{ color: col.text }}
-              onDoubleClick={() => setEditing(true)}
-            >
-              {note.text || <span style={{ opacity: 0.4 }}>Double-click to editâ€¦</span>}
-            </p>
-          )}
-        </div>
+      <div className="sticky-note-header" style={{ backgroundColor: `${color.border}22`, borderColor: `${color.border}30` }}>
+        <GripVertical size={13} style={{ color: color.text, opacity: 0.55 }} />
+        <span style={{ color: color.text }}>{note.structureName}</span>
+        <button type="button" onClick={() => setEditing((value) => !value)} aria-label="Edit note">
+          {editing ? <Check size={12} style={{ color: color.text }} /> : <Pencil size={12} style={{ color: color.text }} />}
+        </button>
+        <button type="button" onClick={() => onDelete(note.id)} aria-label="Delete note">
+          <X size={12} style={{ color: color.text }} />
+        </button>
+      </div>
+      <div className="sticky-note-body">
+        {editing ? (
+          <textarea
+            ref={textRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={saveEdit}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && event.metaKey) saveEdit();
+            }}
+            rows={4}
+            placeholder="Write a note…"
+            style={{ color: color.text, caretColor: color.border }}
+          />
+        ) : (
+          <p style={{ color: color.text }} onDoubleClick={() => setEditing(true)}>
+            {note.text || <span className="sticky-note-placeholder">Double-click to edit…</span>}
+          </p>
+        )}
       </div>
     </motion.div>
-  )
+  );
 }
 
-// â”€â”€â”€ Sticky Notes Manager â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export function StickyNotesLayer() {
-  const [notes, setNotes] = useState<Note[]>(loadNotes)
-  const [open, setOpen]   = useState(false)
-  const [colorIdx, setColorIdx] = useState(0)
+export function StickyNotesLayer({ selectedStructure }: { selectedStructure: NoteOwner | null }) {
+  const [notes, setNotes] = useState<Note[]>(loadNotes);
+  const [open, setOpen] = useState(false);
+  const [colorIndex, setColorIndex] = useState(0);
 
-  const persist = (updated: Note[]) => { setNotes(updated); saveNotes(updated) }
+  const persist = (updated: Note[]) => {
+    setNotes(updated);
+    saveNotes(updated);
+  };
 
   const addNote = () => {
-    const col = NOTE_COLORS[colorIdx % NOTE_COLORS.length]
-    const note: Note = {
-      id: `note_${Date.now()}`,
-      text: '',
-      x: window.innerWidth / 2 - 100,
-      y: window.innerHeight / 2 - 80,
-      color: col.name,
-      createdAt: Date.now(),
-    }
-    persist([...notes, note])
-    setColorIdx(i => i + 1)
-    setOpen(false)
-  }
+    if (!selectedStructure) return;
+    const color = NOTE_COLORS[colorIndex % NOTE_COLORS.length];
+    persist([
+      ...notes,
+      {
+        id: `note_${Date.now()}`,
+        structureId: selectedStructure.id,
+        structureName: selectedStructure.name,
+        text: "",
+        x: Math.max(12, window.innerWidth / 2 - 100),
+        y: 110,
+        color: color.name,
+      },
+    ]);
+    setColorIndex((value) => value + 1);
+    setOpen(false);
+  };
 
   const deleteNote = useCallback((id: string) => {
-    persist(notes.filter(n => n.id !== id))
-  }, [notes])
+    persist(notes.filter((note) => note.id !== id));
+  }, [notes]);
 
   const updateNote = useCallback((id: string, text: string, x: number, y: number) => {
-    persist(notes.map(n => n.id === id ? { ...n, text, x, y } : n))
-  }, [notes])
+    persist(notes.map((note) => note.id === id ? { ...note, text, x, y } : note));
+  }, [notes]);
+
+  const visibleNotes = selectedStructure
+    ? notes.filter((note) => note.structureId === selectedStructure.id)
+    : [];
 
   return (
     <>
-      {/* Floating add button */}
-      <div className="relative">
+      <div className="sticky-notes-control">
         <button
-          onClick={() => setOpen(o => !o)}
-          className={`
-            w-8 h-8 rounded-xl glass border flex items-center justify-center transition-all duration-150
-            ${open
-              ? 'bg-yellow-400/20 border-yellow-400/50 text-yellow-300'
-              : 'border-white/10 text-gray-400 hover:text-white hover:border-white/20'
-            }
-          `}
-          title="Sticky Notes"
+          type="button"
+          className={`icon-button sticky-notes-button ${open ? "active" : ""}`}
+          onClick={() => setOpen((value) => !value)}
+          aria-label={selectedStructure ? `Notes for ${selectedStructure.name}` : "Select a structure before taking notes"}
+          title={selectedStructure ? `Notes for ${selectedStructure.name}` : "Select a structure before taking notes"}
         >
-          <StickyNote size={15} />
+          <StickyNote size={17} />
         </button>
-
-        {/* Colour picker + add */}
         <AnimatePresence>
           {open && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: -4 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: -4 }}
-              className="absolute right-0 top-full mt-2 w-48 rounded-xl border border-white/10 p-3 shadow-2xl z-50"
-              style={{ background: 'rgba(10,14,26,0.95)', backdropFilter: 'blur(12px)' }}
-            >
-              <p className="text-xs text-gray-500 mb-2 font-medium">Pick colour</p>
-              <div className="flex gap-2 mb-3">
-                {NOTE_COLORS.map((c, i) => (
-                  <button
-                    key={c.name}
-                    onClick={() => setColorIdx(i)}
-                    className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110"
-                    style={{
-                      backgroundColor: c.bg,
-                      borderColor: colorIdx % NOTE_COLORS.length === i ? c.border : 'transparent',
-                    }}
-                  />
+            <motion.div className="sticky-notes-menu" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
+              <span className="sticky-notes-menu-label">
+                {selectedStructure ? `${selectedStructure.name} NOTES` : "SELECT AN ORGAN FIRST"}
+              </span>
+              <div className="sticky-notes-colors">
+                {NOTE_COLORS.map((color, index) => (
+                  <button key={color.name} type="button" aria-label={`Use ${color.name} note`} onClick={() => setColorIndex(index)} style={{ backgroundColor: color.bg, borderColor: colorIndex % NOTE_COLORS.length === index ? color.border : "transparent" }} />
                 ))}
               </div>
-              <button
-                onClick={addNote}
-                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg
-                  bg-yellow-400/15 border border-yellow-400/30 text-yellow-300 text-xs font-semibold
-                  hover:bg-yellow-400/25 transition-all active:scale-95"
-              >
-                <Plus size={12} />
-                Add Note
+              <button type="button" className="sticky-notes-add" onClick={addNote} disabled={!selectedStructure}>
+                <Plus size={13} /> ADD NOTE
               </button>
-              {notes.length > 0 && (
-                <p className="text-xs text-gray-600 text-center mt-2">
-                  {notes.length} note{notes.length !== 1 ? 's' : ''} â€¢ drag to move
-                </p>
-              )}
+              {visibleNotes.length > 0 && <small>{visibleNotes.length} note{visibleNotes.length === 1 ? "" : "s"} for this structure</small>}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
-
-      {/* Render all notes as fixed-position overlays */}
       <AnimatePresence>
-        {notes.map(note => (
-          <StickyNoteCard
-            key={note.id}
-            note={note}
-            onDelete={deleteNote}
-            onUpdate={updateNote}
-          />
-        ))}
+        {visibleNotes.map((note) => <StickyNoteCard key={note.id} note={note} onDelete={deleteNote} onUpdate={updateNote} />)}
       </AnimatePresence>
     </>
-  )
+  );
 }
-
-
