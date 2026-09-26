@@ -182,6 +182,9 @@ export function StickyNotesLayer({
   selectedStructure ??= null;
   userId ??= null;
   const [notes, setNotes] = useState<Note[]>([]);
+  const [dismissedNoteIds, setDismissedNoteIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [open, setOpen] = useState(false);
   const [colorIndex, setColorIndex] = useState(0);
 
@@ -207,6 +210,7 @@ export function StickyNotesLayer({
     let active = true;
     if (!activeUserId) {
       setNotes([]);
+      setDismissedNoteIds(new Set());
       setError(null);
       return () => {
         active = false;
@@ -216,7 +220,10 @@ export function StickyNotesLayer({
     setLoading(true);
     void listUserNotes()
       .then((rows) => {
-        if (active) setNotes(rows.map(mapNote));
+        if (active) {
+          setNotes(rows.map(mapNote));
+          setDismissedNoteIds(new Set());
+        }
       })
       .catch((reason: unknown) => {
         if (active) setError(reason instanceof Error ? reason.message : "Unable to load notes.");
@@ -252,18 +259,21 @@ export function StickyNotesLayer({
     setOpen(false);
   };
 
-  const deleteNote = useCallback(async (id: string) => {
+  const discardDraft = useCallback((id: string) => {
     setError(null);
-    if (id.startsWith("draft_")) {
-      setNotes((current) => current.filter((note) => note.id !== id));
-      return;
-    }
-    try {
-      await deleteUserNote(id);
-      setNotes((current) => current.filter((note) => note.id !== id));
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Unable to delete note.");
-    }
+    setNotes((current) => current.filter((note) => note.id !== id));
+  }, []);
+
+  const dismissNote = useCallback((id: string) => {
+    setDismissedNoteIds((current) => new Set(current).add(id));
+  }, []);
+
+  const reopenNote = useCallback((id: string) => {
+    setDismissedNoteIds((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
   }, []);
 
   const cancelEdit = useCallback((_id: string) => {
@@ -304,6 +314,7 @@ export function StickyNotesLayer({
   const visibleNotes = selectedStructure
     ? notes.filter((note) => note.structureId === selectedStructure.id)
     : [];
+  const floatingNotes = visibleNotes.filter((note) => !dismissedNoteIds.has(note.id));
 
   return (
     <>
@@ -332,10 +343,16 @@ export function StickyNotesLayer({
                   {visibleNotes.length > 0 ? visibleNotes.map((note) => {
                     const color = NOTE_COLORS.find((item) => item.name === note.color) ?? NOTE_COLORS[0];
                     return (
-                      <div className="sticky-notes-list-item" key={note.id}>
+                      <button
+                        type="button"
+                        className="sticky-notes-list-item"
+                        key={note.id}
+                        onClick={() => reopenNote(note.id)}
+                        aria-label={`Show note for ${note.structureName}`}
+                      >
                         <span className="sticky-notes-list-dot" style={{ backgroundColor: color.border }} />
                         <span>{note.text.trim() || "Empty note — double-click the note to edit"}</span>
-                      </div>
+                      </button>
                     );
                   }) : (
                     <p className="sticky-notes-empty">No saved notes for this structure yet.</p>
@@ -357,7 +374,7 @@ export function StickyNotesLayer({
         </AnimatePresence>
       </div>
       <AnimatePresence>
-        {visibleNotes.map((note) => <StickyNoteCard key={note.id} note={note} autoEdit={note.isDraft} onDelete={deleteNote} onCancel={cancelEdit} onUpdate={updateNote} />)}
+        {floatingNotes.map((note) => <StickyNoteCard key={note.id} note={note} autoEdit={note.isDraft} onDiscard={discardDraft} onDismiss={dismissNote} onCancel={cancelEdit} onUpdate={updateNote} />)}
       </AnimatePresence>
     </>
   );
