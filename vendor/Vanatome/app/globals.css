@@ -20,6 +20,7 @@
 html,
 body {
   margin: 0;
+  height: 100%;
   min-height: 100%;
   background: var(--background);
   color: var(--ink);
@@ -156,7 +157,8 @@ button {
 
 .app-shell {
   position: relative;
-  min-height: 100svh;
+  height: 100dvh;
+  min-height: 100dvh;
   overflow: hidden;
   background:
     linear-gradient(rgba(0, 212, 255, 0.025) 1px, transparent 1px),
@@ -309,7 +311,7 @@ button {
 }
 
 .workspace {
-  height: calc(100svh - 106px);
+  height: calc(100dvh - 106px);
   display: grid;
   grid-template-columns: 260px minmax(360px, 1fr) 320px;
   position: relative;
@@ -1168,8 +1170,8 @@ button {
   }
 
   .app-shell {
-    height: 100svh;
-    min-height: 100svh;
+    height: 100dvh;
+    min-height: 100dvh;
   }
 
   .topbar {
@@ -1192,7 +1194,7 @@ button {
   }
 
   .workspace {
-    height: calc(100svh - 58px - 64px - env(safe-area-inset-bottom));
+    height: calc(100dvh - 58px - 64px - env(safe-area-inset-bottom));
     min-height: 0;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
