@@ -151,6 +151,18 @@ export function ProgressDashboard() {
     () => [...new Set(atlases.flatMap((atlas) => atlas.structures.map((structure) => structure.layer)))],
     [atlases],
   );
+  const highlightedOrganId = useMemo(() => {
+    const latestOrganId = quizSessions[0]?.organ_id;
+    if (!latestOrganId) return null;
+    return atlases.some((atlas) =>
+      atlas.structures.some((structure) => structure.id === latestOrganId),
+    )
+      ? latestOrganId
+      : null;
+  }, [atlases, quizSessions]);
+  const highlightedOrganName = highlightedOrganId
+    ? atlases.flatMap((atlas) => atlas.structures).find((structure) => structure.id === highlightedOrganId)?.name
+    : null;
 
   return (
     <main className="progress-page-shell">
@@ -201,7 +213,7 @@ export function ProgressDashboard() {
             ) : atlases.length > 0 ? (
               <AnatomyScene
                 atlases={atlases}
-                selectedId={null}
+                selectedId={highlightedOrganId}
                 isolation={null}
                 visibleLayers={visibleLayers}
                 focusRequestKey={0}
@@ -212,8 +224,8 @@ export function ProgressDashboard() {
               />
             ) : null}
             <div className="progress-model-overlay">
-              <span>FULL-BODY ATLAS</span>
-              <strong>{progressSummary.organs_studied} regions visited</strong>
+              <span>{highlightedOrganName ? "LATEST QUIZ ACTIVITY" : "FULL-BODY ATLAS"}</span>
+              <strong>{highlightedOrganName ?? `${progressSummary.organs_studied} regions visited`}</strong>
             </div>
           </div>
         </section>
