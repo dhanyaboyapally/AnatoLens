@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #eafcff;
-  --muted: #6f8e98;
+  --ink: #e2e8f0;
+  --muted: #94a3b8;
   --cyan: #00d4ff;
   --cyan-soft: rgba(0, 212, 255, 0.14);
   --line: rgba(0, 212, 255, 0.15);
-  --panel: rgba(10, 14, 26, 0.92);
+  --panel: rgba(17, 24, 39, 0.92);
   --background: #0a0e1a;
   --highlight: #ff6b35;
   --success: #22c55e;
@@ -159,9 +159,9 @@ button {
   min-height: 100svh;
   overflow: hidden;
   background:
-    linear-gradient(rgba(45, 180, 205, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(45, 180, 205, 0.025) 1px, transparent 1px),
-    radial-gradient(circle at 50% 42%, #09202a 0%, #03080d 50%, #020508 100%);
+    linear-gradient(rgba(0, 212, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.025) 1px, transparent 1px),
+    radial-gradient(circle at 50% 42%, #111827 0%, #0a0e1a 50%, #070b16 100%);
   background-size: 46px 46px, 46px 46px, auto;
 }
 
@@ -878,7 +878,7 @@ button {
 }
 
 .organ-icon {
-  --organ-color: #58e7ff;
+  --organ-color: #00d4ff;
   width: 70px;
   height: 70px;
   display: grid;
@@ -1018,7 +1018,7 @@ button {
   padding: 0 28px;
   border-top: 1px solid var(--line);
   color: #34515a;
-  background: #03080d;
+  background: #070b16;
   font: 7px var(--font-geist-mono);
   letter-spacing: 0.13em;
   position: relative;
