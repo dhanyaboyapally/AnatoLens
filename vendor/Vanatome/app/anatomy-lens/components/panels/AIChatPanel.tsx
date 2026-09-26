@@ -17,7 +17,7 @@ type AIChatPanelProps = {
   availableStructures?: AnatomyStructure[];
   visibleSystems?: readonly string[];
   mode?: string;
-  onFocusStructure?: (id: string) => boolean;
+  onFocusStructure?: (id: string, layer?: string) => boolean;
 };
 
 const QUICK_ACTIONS = [
@@ -33,7 +33,7 @@ function messageText(message: { parts: Array<{ type: string; text?: string }> })
     .join("");
 }
 
-function MarkdownText({ text }: { text: string }) {
+function InlineMarkdown({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return (
     <>
@@ -47,6 +47,36 @@ function MarkdownText({ text }: { text: string }) {
         ),
       )}
     </>
+  );
+}
+
+function MarkdownText({ text }: { text: string }) {
+  return (
+    <div className="space-y-1.5">
+      {text.split(/\r?\n/).map((line, index) => {
+        const heading = line.match(/^#{1,6}\s+(.+)$/);
+        const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+        const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+
+        if (!line.trim()) return <div key={index} className="h-1" />;
+        if (heading) {
+          return (
+            <h4 key={index} className="text-sm font-semibold text-white mt-2">
+              <InlineMarkdown text={heading[1]} />
+            </h4>
+          );
+        }
+        if (bullet || numbered) {
+          return (
+            <div key={index} className="flex gap-2">
+              <span className="text-cyan-400">{bullet ? "•" : "–"}</span>
+              <span><InlineMarkdown text={(bullet ?? numbered)?.[1] ?? ""} /></span>
+            </div>
+          );
+        }
+        return <p key={index}><InlineMarkdown text={line} /></p>;
+      })}
+    </div>
   );
 }
 
@@ -117,7 +147,7 @@ export function AIChatPanel({
         const toolPart = part as {
           type?: string;
           state?: string;
-          output?: { found?: boolean; structureId?: string };
+          output?: { found?: boolean; structureId?: string; layer?: string };
         };
         if (
           toolPart.type === "tool-focusStructure" &&
@@ -125,7 +155,7 @@ export function AIChatPanel({
           toolPart.output?.found &&
           toolPart.output.structureId
         ) {
-          onFocusStructure(toolPart.output.structureId);
+          onFocusStructure(toolPart.output.structureId, toolPart.output.layer);
         }
       }
     },
