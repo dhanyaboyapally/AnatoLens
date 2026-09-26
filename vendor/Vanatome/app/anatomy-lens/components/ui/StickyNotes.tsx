@@ -22,6 +22,7 @@ type Note = {
   x: number;
   y: number;
   color: string;
+  isDraft?: boolean;
 };
 
 const NOTE_COLORS = [
@@ -48,13 +49,15 @@ function StickyNoteCard({
   note,
   onDelete,
   onUpdate,
+  autoEdit = false,
 }: {
   note: Note;
   onDelete: (id: string) => void;
-  onUpdate: (id: string, text: string, x: number, y: number) => void;
+  onUpdate: (id: string, text: string, x: number, y: number) => void | Promise<void>;
+  autoEdit?: boolean;
 }) {
   const color = NOTE_COLORS.find((item) => item.name === note.color) ?? NOTE_COLORS[0];
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(autoEdit);
   const [draft, setDraft] = useState(note.text);
   const [position, setPosition] = useState({ x: note.x, y: note.y });
   const dragging = useRef(false);
@@ -62,7 +65,7 @@ function StickyNoteCard({
   const textRef = useRef<HTMLTextAreaElement>(null);
 
   const startDragging = (event: React.PointerEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest("button, textarea")) return;
+    if (note.isDraft || (event.target as HTMLElement).closest("button, textarea")) return;
     dragging.current = true;
     offset.current = {
       x: event.clientX - position.x,
@@ -82,12 +85,12 @@ function StickyNoteCard({
   const finishDragging = () => {
     if (!dragging.current) return;
     dragging.current = false;
-    onUpdate(note.id, draft, position.x, position.y);
+    void onUpdate(note.id, draft, position.x, position.y);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
+    await onUpdate(note.id, draft, position.x, position.y);
     setEditing(false);
-    onUpdate(note.id, draft, position.x, position.y);
   };
 
   useEffect(() => {
@@ -122,9 +125,8 @@ function StickyNoteCard({
             ref={textRef}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            onBlur={saveEdit}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && event.metaKey) saveEdit();
+              if (event.key === "Enter" && event.metaKey) void saveEdit();
             }}
             rows={4}
             placeholder="Write a note…"
@@ -154,7 +156,6 @@ export function StickyNotesLayer({
   const [colorIndex, setColorIndex] = useState(0);
 
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolvedUserId, setResolvedUserId] = useState(userId);
   const activeUserId = userId ?? resolvedUserId;
@@ -205,22 +206,27 @@ export function StickyNotesLayer({
       return;
     }
     const color = NOTE_COLORS[colorIndex % NOTE_COLORS.length];
-    setSaving(true);
     setError(null);
-    try {
-      const row = await createUserNote(selectedStructure.id, "");
-      setNotes((current) => [...current, { ...mapNote(row, current.length), color: color.name, structureName: selectedStructure.name }]);
-      setColorIndex((value) => value + 1);
-      setOpen(false);
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Unable to create note.");
-    } finally {
-      setSaving(false);
-    }
+    setNotes((current) => [...current, {
+      id: `draft_${Date.now()}`,
+      structureId: selectedStructure.id,
+      structureName: selectedStructure.name,
+      text: "",
+      x: Math.max(12, window.innerWidth / 2 - 100),
+      y: 110,
+      color: color.name,
+      isDraft: true,
+    }]);
+    setColorIndex((value) => value + 1);
+    setOpen(false);
   };
 
   const deleteNote = useCallback(async (id: string) => {
     setError(null);
+    if (id.startsWith("draft_")) {
+      setNotes((current) => current.filter((note) => note.id !== id));
+      return;
+    }
     try {
       await deleteUserNote(id);
       setNotes((current) => current.filter((note) => note.id !== id));
@@ -231,13 +237,26 @@ export function StickyNotesLayer({
 
   const updateNote = useCallback(async (id: string, text: string, x: number, y: number) => {
     setError(null);
+    const note = notes.find((item) => item.id === id);
+    if (!note) return;
     try {
-      await updateUserNote(id, text);
-      setNotes((current) => current.map((note) => note.id === id ? { ...note, text, x, y } : note));
+      if (note.isDraft) {
+        if (!text.trim()) {
+          throw new Error("Write something in the note before saving.");
+        }
+        const row = await createUserNote(note.structureId, text);
+        setNotes((current) => current.map((item) => item.id === id
+          ? { ...mapNote(row, current.indexOf(item)), color: note.color, structureName: note.structureName }
+          : item));
+      } else {
+        await updateUserNote(id, text);
+        setNotes((current) => current.map((item) => item.id === id ? { ...item, text, x, y } : item));
+      }
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "Unable to update note.");
+      throw reason;
     }
-  }, []);
+  }, [notes]);
 
   const visibleNotes = selectedStructure
     ? notes.filter((note) => note.structureId === selectedStructure.id)
@@ -285,8 +304,8 @@ export function StickyNotesLayer({
                   <button key={color.name} type="button" aria-label={`Use ${color.name} note`} onClick={() => setColorIndex(index)} style={{ backgroundColor: color.bg, borderColor: colorIndex % NOTE_COLORS.length === index ? color.border : "transparent" }} />
                 ))}
               </div>
-              <button type="button" className="sticky-notes-add" onClick={() => void addNote()} disabled={!selectedStructure || saving}>
-                <Plus size={13} /> {saving ? "SAVING…" : "ADD NOTE"}
+              <button type="button" className="sticky-notes-add" onClick={() => void addNote()} disabled={!selectedStructure}>
+                <Plus size={13} /> ADD NOTE
               </button>
               {error && <p className="sticky-notes-error" role="alert">{error}</p>}
               {visibleNotes.length > 0 && <small>{visibleNotes.length} note{visibleNotes.length === 1 ? "" : "s"} for this structure</small>}
@@ -295,7 +314,7 @@ export function StickyNotesLayer({
         </AnimatePresence>
       </div>
       <AnimatePresence>
-        {visibleNotes.map((note) => <StickyNoteCard key={note.id} note={note} onDelete={deleteNote} onUpdate={updateNote} />)}
+        {visibleNotes.map((note) => <StickyNoteCard key={note.id} note={note} autoEdit={note.isDraft} onDelete={deleteNote} onUpdate={updateNote} />)}
       </AnimatePresence>
     </>
   );
