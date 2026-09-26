@@ -18,8 +18,8 @@ async function currentUser(): Promise<User> {
   return data.user;
 }
 
-export async function ensurePublicUser(user: User) {
-  const { error } = await requireSupabase().from("users").upsert(
+export async function ensurePublicUser(user: User, client = requireSupabase()) {
+  const { error } = await client.from("users").upsert(
     {
       id: user.id,
       password: "managed-by-supabase-auth",
