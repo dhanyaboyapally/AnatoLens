@@ -1,25 +1,9 @@
 import { z } from "zod";
 import { authenticateRequest } from "../../../lib/api-auth";
-
+import { serializeQuizQuestion, type QuizQuestionRow } from "../../../lib/quiz";
 const querySchema = z.object({
   organId: z.string().trim().min(1).max(100),
 });
-
-type QuestionRow = {
-  id: string;
-  organ_id: string;
-  question: string;
-  options: unknown;
-};
-
-function serializeQuestion(question: QuestionRow) {
-  return {
-    id: question.id,
-    organ_id: question.organ_id,
-    question: question.question,
-    options: Array.isArray(question.options) ? question.options : [],
-  };
-}
 
 export async function GET(request: Request) {
   const context = await authenticateRequest(request, "the quiz");
@@ -41,7 +25,7 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: true });
 
     if (error) throw error;
-    return Response.json((data as QuestionRow[]).map(serializeQuestion));
+    return Response.json((data as QuizQuestionRow[]).map(serializeQuizQuestion));
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Unable to load quiz questions." },
