@@ -219,8 +219,8 @@ function AtlasLoadScreen({
             <img src="/favicon.svg" alt="" />
           </div>
           <div>
-            <div className="brand-name">Vanatome</div>
-            <div className="brand-subtitle">HUMAN SYSTEMS ATLAS</div>
+            <div className="brand-name">AnatomyLens</div>
+            <div className="brand-subtitle">INTERACTIVE ANATOMY LAB</div>
           </div>
         </div>
         <div className={`status-pill ${failed ? "status-error" : ""}`}>
@@ -557,8 +557,8 @@ function LoadedAnatomyExplorer({
             <img src="/favicon.svg" alt="" />
           </div>
           <div>
-            <div className="brand-name">Vanatome</div>
-            <div className="brand-subtitle">HUMAN SYSTEMS ATLAS</div>
+            <div className="brand-name">AnatomyLens</div>
+            <div className="brand-subtitle">INTERACTIVE ANATOMY LAB</div>
           </div>
         </div>
 
