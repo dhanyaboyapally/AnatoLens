@@ -1,123 +1,181 @@
 import { CheckCircle2, RotateCcw, Trophy } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AnatomyStructure } from "../data/anatomy";
-
-type QuizQuestion = {
-  question: string;
-  options: string[];
-  answer: string;
-};
-
-const QUESTION_BANK: Record<string, QuizQuestion[]> = {
-  heart: [
-    { question: "What is the primary function of the heart?", options: ["Store bile", "Pump blood", "Exchange gases", "Filter urine"], answer: "Pump blood" },
-    { question: "How many chambers does the heart have?", options: ["Two", "Three", "Four", "Six"], answer: "Four" },
-    { question: "Which system does the heart belong to?", options: ["Digestive", "Cardiovascular", "Respiratory", "Nervous"], answer: "Cardiovascular" },
-  ],
-  lungs: [
-    { question: "What is the main function of the lungs?", options: ["Digest food", "Exchange gases", "Produce insulin", "Store blood"], answer: "Exchange gases" },
-    { question: "Which gas moves from the lungs into the bloodstream?", options: ["Oxygen", "Nitrogen", "Helium", "Hydrogen"], answer: "Oxygen" },
-  ],
-  liver: [
-    { question: "Which substance does the liver produce to help digest fats?", options: ["Bile", "Insulin", "Saliva", "Mucus"], answer: "Bile" },
-    { question: "Where is most of the liver located?", options: ["Upper-right abdomen", "Lower-left pelvis", "Center of the skull", "Posterior thorax"], answer: "Upper-right abdomen" },
-  ],
-};
-
-function fallbackQuestions(structure: AnatomyStructure): QuizQuestion[] {
-  return [
-    { question: "Which body system contains this structure?", options: [structure.system, "Cardiovascular", "Respiratory", "Nervous"].filter((option, index, options) => options.indexOf(option) === index), answer: structure.system },
-    { question: "What is the best first step when studying this structure?", options: ["Identify its location", "Ignore its relationships", "Study without a model", "Memorize unrelated facts"], answer: "Identify its location" },
-    { question: "Which detail is most useful for understanding an organ?", options: ["Its function", "Its screen position", "Its file name", "Its display color"], answer: "Its function" },
-  ];
-}
+import {
+  completeQuiz,
+  listQuizQuestions,
+  startQuiz as createQuizSession,
+  submitQuizAnswer,
+  type QuizCompletion,
+  type QuizQuestion,
+} from "../lib/quiz-api";
 
 type QuizPanelProps = {
   selectedStructure: AnatomyStructure | null;
+  isAuthenticated: boolean;
+  onRequestSignIn: () => void;
 };
 
-export function QuizPanel({ selectedStructure }: QuizPanelProps) {
-  const questions = selectedStructure
-    ? QUESTION_BANK[selectedStructure.id] ?? fallbackQuestions(selectedStructure)
-    : [];
-  const [started, setStarted] = useState(false);
+export function QuizPanel({
+  selectedStructure,
+  isAuthenticated,
+  onRequestSignIn,
+}: QuizPanelProps) {
+  const [availableQuestions, setAvailableQuestions] = useState<QuizQuestion[]>([]);
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [completion, setCompletion] = useState<QuizCompletion | null>(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "active" | "complete">("idle");
   const [questionIndex, setQuestionIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [answered, setAnswered] = useState<string | null>(null);
+  const [answered, setAnswered] = useState<number | null>(null);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [savingAnswer, setSavingAnswer] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setStarted(false);
+    setAvailableQuestions([]);
+    setQuestions([]);
+    setSessionId(null);
+    setCompletion(null);
+    setStatus("idle");
     setQuestionIndex(0);
-    setScore(0);
     setAnswered(null);
-  }, [selectedStructure?.id]);
+    setError(null);
+
+    if (!selectedStructure || !isAuthenticated) return;
+
+    let active = true;
+    setLoadingQuestions(true);
+    void listQuizQuestions(selectedStructure.id)
+      .then((loadedQuestions) => {
+        if (active) setAvailableQuestions(loadedQuestions);
+      })
+      .catch((reason: unknown) => {
+        if (active) {
+          setError(reason instanceof Error ? reason.message : "Unable to load quiz questions.");
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingQuestions(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, selectedStructure?.id]);
 
   if (!selectedStructure) {
     return <div className="quiz-empty">Select a structure in the model to begin a quiz.</div>;
   }
 
   const currentQuestion = questions[questionIndex];
-  const isComplete = started && questionIndex >= questions.length;
 
-  const startQuiz = () => {
-    setStarted(true);
-    setQuestionIndex(0);
-    setScore(0);
-    setAnswered(null);
-  };
-
-  const answerQuestion = (option: string) => {
-    if (answered) return;
-    setAnswered(option);
-    if (option === currentQuestion.answer) setScore((value) => value + 1);
-    window.setTimeout(() => {
-      setQuestionIndex((value) => value + 1);
+  const beginQuiz = async () => {
+    if (!isAuthenticated) {
+      onRequestSignIn();
+      return;
+    }
+    setStatus("loading");
+    setError(null);
+    try {
+      const result = await createQuizSession(selectedStructure.id, 5);
+      setSessionId(result.session.id);
+      setQuestions(result.questions);
+      setQuestionIndex(0);
       setAnswered(null);
-    }, 350);
+      setCompletion(null);
+      setStatus("active");
+    } catch (reason: unknown) {
+      setStatus("idle");
+      setError(reason instanceof Error ? reason.message : "Unable to start the quiz.");
+    }
   };
 
-  if (!started) {
-    return (
-      <div className="quiz-panel-content">
-        <span className="eyebrow">KNOWLEDGE CHECK</span>
-        <h2>{selectedStructure.name}</h2>
-        <p className="summary">Test your understanding with a short set of questions about this structure.</p>
-        <button type="button" className="quiz-primary-action" onClick={startQuiz}>START QUIZ</button>
-        <span className="quiz-meta">{questions.length} QUESTIONS</span>
-      </div>
-    );
-  }
+  const answerQuestion = async (optionIndex: number) => {
+    if (!sessionId || !currentQuestion || answered !== null || savingAnswer) return;
 
-  if (isComplete) {
+    setAnswered(optionIndex);
+    setSavingAnswer(true);
+    setError(null);
+    try {
+      await submitQuizAnswer(sessionId, currentQuestion.id, optionIndex);
+      const nextIndex = questionIndex + 1;
+      if (nextIndex >= questions.length) {
+        const result = await completeQuiz(sessionId);
+        setCompletion(result);
+        setStatus("complete");
+      } else {
+        setQuestionIndex(nextIndex);
+        setAnswered(null);
+      }
+    } catch (reason: unknown) {
+      setAnswered(null);
+      setError(reason instanceof Error ? reason.message : "Unable to save your answer.");
+    } finally {
+      setSavingAnswer(false);
+    }
+  };
+
+  if (status === "complete" && completion) {
     return (
       <div className="quiz-panel-content quiz-scoreboard">
         <Trophy size={32} />
         <span className="eyebrow">QUIZ COMPLETE</span>
-        <h2>{score} / {questions.length}</h2>
+        <h2>{completion.score} / {completion.total_questions}</h2>
         <p className="summary">Your score for {selectedStructure.name}.</p>
-        <button type="button" className="quiz-primary-action" onClick={startQuiz}><RotateCcw size={14} /> TRY AGAIN</button>
+        <button type="button" className="quiz-primary-action" onClick={beginQuiz}>
+          <RotateCcw size={14} /> TRY AGAIN
+        </button>
       </div>
     );
   }
 
+  if (status === "active" && currentQuestion) {
+    return (
+      <div className="quiz-panel-content">
+        <div className="quiz-progress">
+          <span>QUESTION {questionIndex + 1} OF {questions.length}</span>
+          <strong>{savingAnswer ? "SAVING" : "SELECT ONE"}</strong>
+        </div>
+        <h3>{currentQuestion.question}</h3>
+        <div className="quiz-options">
+          {currentQuestion.options.map((option, optionIndex) => (
+            <button
+              type="button"
+              key={option}
+              className={answered === optionIndex ? "selected" : ""}
+              onClick={() => void answerQuestion(optionIndex)}
+              disabled={answered !== null || savingAnswer}
+            >
+              {answered === optionIndex && <CheckCircle2 size={14} />}
+              {option}
+            </button>
+          ))}
+        </div>
+        {error && <p className="quiz-error" role="alert">{error}</p>}
+      </div>
+    );
+  }
+
+  const hasQuestions = availableQuestions.length > 0;
   return (
     <div className="quiz-panel-content">
-      <div className="quiz-progress"><span>QUESTION {questionIndex + 1} OF {questions.length}</span><strong>{score} correct</strong></div>
-      <h3>{currentQuestion.question}</h3>
-      <div className="quiz-options">
-        {currentQuestion.options.map((option) => (
-          <button
-            type="button"
-            key={option}
-            className={answered === option ? "selected" : ""}
-            onClick={() => answerQuestion(option)}
-            disabled={Boolean(answered)}
-          >
-            {answered === option && <CheckCircle2 size={14} />}
-            {option}
-          </button>
-        ))}
-      </div>
+      <span className="eyebrow">KNOWLEDGE CHECK</span>
+      <h2>{selectedStructure.name}</h2>
+      <p className="summary">Test your understanding with a short set of questions about this structure.</p>
+      {!isAuthenticated ? (
+        <button type="button" className="quiz-primary-action" onClick={onRequestSignIn}>SIGN IN TO START</button>
+      ) : loadingQuestions ? (
+        <button type="button" className="quiz-primary-action" disabled>LOADING QUESTIONS</button>
+      ) : hasQuestions ? (
+        <button type="button" className="quiz-primary-action" onClick={() => void beginQuiz()}>
+          START QUIZ
+        </button>
+      ) : (
+        <button type="button" className="quiz-primary-action" disabled>NO QUESTIONS YET</button>
+      )}
+      {hasQuestions && <span className="quiz-meta">{availableQuestions.length} QUESTIONS AVAILABLE</span>}
+      {error && <p className="quiz-error" role="alert">{error}</p>}
     </div>
   );
 }
