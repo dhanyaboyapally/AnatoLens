@@ -31,6 +31,15 @@ export type QuizCompletion = {
   total_questions: number;
 };
 
+export type ProgressResponse = {
+  summary: {
+    organs_studied: number;
+    quiz_accuracy: number;
+    completed_quizzes: number;
+  };
+  quiz_sessions: QuizSession[];
+};
+
 async function quizApiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const client = requireSupabase();
   const { data, error } = await client.auth.getSession();
@@ -86,4 +95,8 @@ export function completeQuiz(sessionId: string): Promise<QuizCompletion> {
 
 export function listQuizSessions(): Promise<QuizSession[]> {
   return quizApiRequest("/api/quiz/sessions");
+}
+
+export function getProgress(): Promise<ProgressResponse> {
+  return quizApiRequest("/api/progress");
 }
