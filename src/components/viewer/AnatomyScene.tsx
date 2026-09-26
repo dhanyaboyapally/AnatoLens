@@ -76,6 +76,11 @@ export function AnatomyScene() {
     [atlas, selectedStructure]
   )
 
+  const visibleLayers = useMemo(
+    () => atlas ? [...new Set(atlas.structures.map(structure => structure.layer))] : [],
+    [atlas]
+  )
+
   const isolatedAtlasId = useMemo(
     () => atlas && isolatedId
       ? findAtlasId(atlas, ANATOMY_STRUCTURES.find(structure => structure.id === isolatedId) ?? null)
@@ -133,6 +138,14 @@ export function AnatomyScene() {
         selectedId={selectedAtlasId}
         isolatedId={isolatedAtlasId}
         hiddenIds={hiddenAtlasIds}
+        visibleLayers={visibleLayers}
+        displayMode="xray"
+        appearance={{
+          bodyShellId: null,
+          skeletonId: null,
+          defaultOpacity: 0.72,
+          xrayOpacity: 0.42,
+        }}
         focusRequestKey={controller.focusRequestKey}
         resetViewKey={controller.resetViewKey}
         onSelect={id => selectStructure(id ? findAppStructure(atlas, id) ?? null : null)}
