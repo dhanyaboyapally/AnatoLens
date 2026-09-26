@@ -2,7 +2,6 @@
 
 import {
   Activity,
-  Brain,
   ChevronDown,
   ChevronRight,
   Crosshair,
@@ -295,7 +294,6 @@ function LoadedAnatomyExplorer({
   const [query, setQuery] = useState("");
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const [learningPanelOpen, setLearningPanelOpen] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [mobileNavigationPanel, setMobileNavigationPanel] =
     useState<MobileNavigationPanel>(null);
@@ -574,15 +572,6 @@ function LoadedAnatomyExplorer({
         </div>
 
         <div className="topbar-actions">
-          <button
-            className={`icon-button ${learningPanelOpen ? "active" : ""}`}
-            type="button"
-            onClick={() => setLearningPanelOpen((open) => !open)}
-            aria-label={learningPanelOpen ? "Close AnatomyLens learning tools" : "Open AnatomyLens learning tools"}
-            aria-expanded={learningPanelOpen}
-          >
-            <Brain size={18} />
-          </button>
           <button
             className="icon-button"
             type="button"
