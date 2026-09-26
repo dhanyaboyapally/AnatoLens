@@ -43,3 +43,4 @@ to anon, authenticated;
 
 alter table public.users disable row level security;
 alter table public.notes disable row level security;
+
