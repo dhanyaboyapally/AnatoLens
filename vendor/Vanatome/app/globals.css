@@ -1721,3 +1721,15 @@ button {
   min-height: 0;
   height: 100%;
 }
+
+@media (min-width: 981px) {
+  .info-panel.ai-panel {
+    position: fixed;
+    top: 76px;
+    right: 0;
+    bottom: 30px;
+    width: 320px;
+    height: auto;
+    z-index: 25;
+  }
+}
