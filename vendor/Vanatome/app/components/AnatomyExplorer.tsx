@@ -9,6 +9,7 @@ import {
   EyeOff,
   Info,
   Layers3,
+  MessageSquare,
   Move,
   PanelLeftClose,
   PanelLeftOpen,
@@ -47,6 +48,7 @@ import {
   ATLAS_CATALOG_IS_DEMO,
   ATLAS_CATALOG_URL,
 } from "../config/atlas";
+import { AIChatPanel } from "../anatomy-lens/components/panels/AIChatPanel";
 
 type MobileNavigationPanel = "browse" | "systems" | null;
 type SystemLoadMode = "incremental" | "full-body";
@@ -294,6 +296,7 @@ function LoadedAnatomyExplorer({
   const [query, setQuery] = useState("");
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [rightTab, setRightTab] = useState<"info" | "ai">("info");
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [mobileNavigationPanel, setMobileNavigationPanel] =
     useState<MobileNavigationPanel>(null);
@@ -797,7 +800,7 @@ function LoadedAnatomyExplorer({
         {rightOpen && (
           <aside
             id="anatomy-details"
-            className={`info-panel ${mobilePanelOpen ? "mobile-open" : ""}`}
+            className={`info-panel ${rightTab === "ai" ? "ai-panel" : ""} ${mobilePanelOpen ? "mobile-open" : ""}`}
             aria-label="Anatomy details"
             aria-hidden={
               isCompact && !mobilePanelOpen ? true : undefined
@@ -806,6 +809,29 @@ function LoadedAnatomyExplorer({
               isCompact && !mobilePanelOpen ? true : undefined
             }
           >
+            <div className="detail-tabs" role="tablist" aria-label="Anatomy details tabs">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rightTab === "info"}
+                className={rightTab === "info" ? "active" : ""}
+                onClick={() => setRightTab("info")}
+              >
+                <Info size={14} />
+                Info
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rightTab === "ai"}
+                className={rightTab === "ai" ? "active" : ""}
+                onClick={() => setRightTab("ai")}
+              >
+                <MessageSquare size={14} />
+                AI
+              </button>
+            </div>
+
             <button
               type="button"
               className="panel-close"
@@ -815,7 +841,11 @@ function LoadedAnatomyExplorer({
               <X size={20} />
             </button>
 
-            {selected ? (
+            {rightTab === "ai" ? (
+              <div className="ai-tab-content">
+                <AIChatPanel />
+              </div>
+            ) : selected ? (
               <>
                 <div className="panel-code">REF / {selected.id.toUpperCase()}</div>
                 <div
