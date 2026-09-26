@@ -923,6 +923,7 @@ function LoadedAnatomyExplorer({
             ) : rightTab === "quiz" ? (
               <div className="ai-tab-content quiz-tab-content">
                 <QuizPanel
+                  key={`${selected?.id ?? "none"}-${authUser ? "signed-in" : "signed-out"}`}
                   selectedStructure={selected}
                   isAuthenticated={Boolean(authUser)}
                   onRequestSignIn={() => setAuthOpen(true)}
