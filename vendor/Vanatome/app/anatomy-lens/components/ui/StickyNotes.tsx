@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, GripVertical, Pencil, Plus, StickyNote, X } from "lucide-react";
+import {
+  createUserNote,
+  deleteUserNote,
+  listUserNotes,
+  updateUserNote,
+  type NoteRow,
+} from "../../../lib/notes";
 
 type NoteOwner = { id: string; name: string };
 
@@ -24,20 +31,16 @@ const NOTE_COLORS = [
   { bg: "#e9d5ff", border: "#a855f7", text: "#4a1d96", name: "purple" },
 ];
 
-const STORAGE_KEY = "anatomylens_sticky_notes";
-
-function loadNotes(): Note[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored ? (JSON.parse(stored) as Note[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveNotes(notes: Note[]) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+function mapNote(row: NoteRow, index: number): Note {
+  return {
+    id: row.id,
+    structureId: row.organ,
+    structureName: row.organ,
+    text: row.note,
+    x: Math.max(12, window.innerWidth / 2 - 100),
+    y: 110 + (index % 4) * 18,
+    color: NOTE_COLORS[index % NOTE_COLORS.length].name,
+  };
 }
 
 function StickyNoteCard({
@@ -136,42 +139,87 @@ function StickyNoteCard({
   );
 }
 
-export function StickyNotesLayer({ selectedStructure }: { selectedStructure: NoteOwner | null }) {
-  const [notes, setNotes] = useState<Note[]>(loadNotes);
+export function StickyNotesLayer({
+  selectedStructure,
+  userId,
+}: {
+  selectedStructure: NoteOwner | null;
+  userId: string | null;
+}) {
+  const [notes, setNotes] = useState<Note[]>([]);
   const [open, setOpen] = useState(false);
   const [colorIndex, setColorIndex] = useState(0);
 
-  const persist = (updated: Note[]) => {
-    setNotes(updated);
-    saveNotes(updated);
-  };
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const addNote = () => {
-    if (!selectedStructure) return;
+  useEffect(() => {
+    let active = true;
+    if (!userId) {
+      setNotes([]);
+      setError(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    setLoading(true);
+    void listUserNotes()
+      .then((rows) => {
+        if (active) setNotes(rows.map(mapNote));
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : "Unable to load notes.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  const addNote = async () => {
+    if (!selectedStructure || !userId) {
+      setError("Sign in before creating notes.");
+      return;
+    }
     const color = NOTE_COLORS[colorIndex % NOTE_COLORS.length];
-    persist([
-      ...notes,
-      {
-        id: `note_${Date.now()}`,
-        structureId: selectedStructure.id,
-        structureName: selectedStructure.name,
-        text: "",
-        x: Math.max(12, window.innerWidth / 2 - 100),
-        y: 110,
-        color: color.name,
-      },
-    ]);
-    setColorIndex((value) => value + 1);
-    setOpen(false);
+    setSaving(true);
+    setError(null);
+    try {
+      const row = await createUserNote(selectedStructure.id, "");
+      setNotes((current) => [...current, { ...mapNote(row, current.length), color: color.name, structureName: selectedStructure.name }]);
+      setColorIndex((value) => value + 1);
+      setOpen(false);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Unable to create note.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const deleteNote = useCallback((id: string) => {
-    persist(notes.filter((note) => note.id !== id));
-  }, [notes]);
+  const deleteNote = useCallback(async (id: string) => {
+    setError(null);
+    try {
+      await deleteUserNote(id);
+      setNotes((current) => current.filter((note) => note.id !== id));
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Unable to delete note.");
+    }
+  }, []);
 
-  const updateNote = useCallback((id: string, text: string, x: number, y: number) => {
-    persist(notes.map((note) => note.id === id ? { ...note, text, x, y } : note));
-  }, [notes]);
+  const updateNote = useCallback(async (id: string, text: string, x: number, y: number) => {
+    setError(null);
+    try {
+      await updateUserNote(id, text);
+      setNotes((current) => current.map((note) => note.id === id ? { ...note, text, x, y } : note));
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Unable to update note.");
+    }
+  }, []);
 
   const visibleNotes = selectedStructure
     ? notes.filter((note) => note.structureId === selectedStructure.id)
@@ -184,8 +232,8 @@ export function StickyNotesLayer({ selectedStructure }: { selectedStructure: Not
           type="button"
           className={`icon-button sticky-notes-button ${open ? "active" : ""}`}
           onClick={() => setOpen((value) => !value)}
-          aria-label={selectedStructure ? `Notes for ${selectedStructure.name}` : "Select a structure before taking notes"}
-          title={selectedStructure ? `Notes for ${selectedStructure.name}` : "Select a structure before taking notes"}
+          aria-label={selectedStructure ? `Notes for ${selectedStructure.name}` : "Sign in and select a structure before taking notes"}
+          title={selectedStructure ? `Notes for ${selectedStructure.name}` : "Sign in and select a structure before taking notes"}
         >
           <StickyNote size={17} />
         </button>
@@ -193,8 +241,9 @@ export function StickyNotesLayer({ selectedStructure }: { selectedStructure: Not
           {open && (
             <motion.div className="sticky-notes-menu" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
               <span className="sticky-notes-menu-label">
-                {selectedStructure ? `${selectedStructure.name} NOTES` : "SELECT AN ORGAN FIRST"}
+                {selectedStructure ? `${selectedStructure.name} NOTES` : "SIGN IN AND SELECT AN ORGAN"}
               </span>
+              {loading && <p className="sticky-notes-empty">Loading saved notes…</p>}
               {selectedStructure && (
                 <div className="sticky-notes-list" aria-label={`Saved notes for ${selectedStructure.name}`}>
                   {visibleNotes.length > 0 ? visibleNotes.map((note) => {
@@ -215,9 +264,10 @@ export function StickyNotesLayer({ selectedStructure }: { selectedStructure: Not
                   <button key={color.name} type="button" aria-label={`Use ${color.name} note`} onClick={() => setColorIndex(index)} style={{ backgroundColor: color.bg, borderColor: colorIndex % NOTE_COLORS.length === index ? color.border : "transparent" }} />
                 ))}
               </div>
-              <button type="button" className="sticky-notes-add" onClick={addNote} disabled={!selectedStructure}>
-                <Plus size={13} /> ADD NOTE
+              <button type="button" className="sticky-notes-add" onClick={() => void addNote()} disabled={!selectedStructure || !userId || saving}>
+                <Plus size={13} /> {saving ? "SAVING…" : "ADD NOTE"}
               </button>
+              {error && <p className="sticky-notes-error" role="alert">{error}</p>}
               {visibleNotes.length > 0 && <small>{visibleNotes.length} note{visibleNotes.length === 1 ? "" : "s"} for this structure</small>}
             </motion.div>
           )}
