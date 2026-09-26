@@ -843,7 +843,17 @@ function LoadedAnatomyExplorer({
 
             {rightTab === "ai" ? (
               <div className="ai-tab-content">
-                <AIChatPanel />
+                <AIChatPanel
+                  selectedStructure={selected}
+                  availableStructures={anatomyRegistry}
+                  visibleSystems={activeSystemIds}
+                  onFocusStructure={(id) => {
+                    if (!anatomyById[id]) return false;
+                    choose(id);
+                    viewer.focus(id);
+                    return true;
+                  }}
+                />
               </div>
             ) : selected ? (
               <>
