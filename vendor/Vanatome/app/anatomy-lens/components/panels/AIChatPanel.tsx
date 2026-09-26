@@ -13,11 +13,11 @@ type ChatStructure = Pick<
 >;
 
 type AIChatPanelProps = {
-  selectedStructure: AnatomyStructure | null;
-  availableStructures: AnatomyStructure[];
-  visibleSystems: readonly string[];
+  selectedStructure?: AnatomyStructure | null;
+  availableStructures?: AnatomyStructure[];
+  visibleSystems?: readonly string[];
   mode?: string;
-  onFocusStructure: (id: string) => boolean;
+  onFocusStructure?: (id: string) => boolean;
 };
 
 const QUICK_ACTIONS = [
@@ -85,11 +85,11 @@ function MessageBubble({ message }: { message: { role: string; parts: Array<{ ty
 }
 
 export function AIChatPanel({
-  selectedStructure,
-  availableStructures,
-  visibleSystems,
+  selectedStructure = null,
+  availableStructures = [],
+  visibleSystems = [],
   mode = "chat",
-  onFocusStructure,
+  onFocusStructure = () => false,
 }: AIChatPanelProps) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
