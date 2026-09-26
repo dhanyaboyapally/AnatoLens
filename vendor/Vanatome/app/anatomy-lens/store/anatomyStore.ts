@@ -499,4 +499,3 @@ export const useAnatomyStore = create<AnatomyState>((set, get) => ({
   },
 }))
 
-
