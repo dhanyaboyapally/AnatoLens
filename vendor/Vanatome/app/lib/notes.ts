@@ -44,15 +44,29 @@ export async function listUserNotes(): Promise<NoteRow[]> {
 
 export async function createUserNote(organ: string, note: string): Promise<NoteRow> {
   const client = requireSupabase();
-  const user = await currentUser();
-  await ensurePublicUser(user);
-  const { data, error } = await client
-    .from("notes")
-    .insert({ user_id: user.id, organ, note })
-    .select("id,user_id,organ,note,created_at,updated_at")
-    .single();
-  if (error) throw error;
-  return data as NoteRow;
+  const { data: sessionData, error: sessionError } = await client.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (sessionError || !accessToken) {
+    throw new Error("Sign in before saving notes.");
+  }
+
+  const response = await fetch("/api/notes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ organ, note }),
+  });
+  const payload = await response.json().catch(() => null) as NoteRow | { error?: string } | null;
+  if (!response.ok) {
+    throw new Error(
+      payload && "error" in payload && payload.error
+        ? payload.error
+        : "Unable to save note.",
+    );
+  }
+  return payload as NoteRow;
 }
 
 export async function updateUserNote(id: string, note: string): Promise<NoteRow> {
