@@ -46,6 +46,7 @@
     "ai": "^7.0.116",
     "framer-motion": "^13.4.4",
     "lucide-react": "^1.27.0",
+    "mermaid": "^11.17.2",
     "next": "16.2.12",
     "react": "19.2.6",
     "react-dom": "19.2.6",
