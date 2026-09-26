@@ -29,44 +29,43 @@ export async function ensurePublicUser(user: User) {
   if (error) throw error;
 }
 
-export async function listUserNotes(): Promise<NoteRow[]> {
-  const client = requireSupabase();
-  const user = await currentUser();
-  await ensurePublicUser(user);
-  const { data, error } = await client
-    .from("notes")
-    .select("id,user_id,organ,note,created_at,updated_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as NoteRow[];
-}
-
-export async function createUserNote(organ: string, note: string): Promise<NoteRow> {
+async function notesApiRequest(
+  method: "GET" | "POST",
+  body?: { organ: string; note: string },
+): Promise<unknown> {
   const client = requireSupabase();
   const { data: sessionData, error: sessionError } = await client.auth.getSession();
   const accessToken = sessionData.session?.access_token;
   if (sessionError || !accessToken) {
-    throw new Error("Sign in before saving notes.");
+    throw new Error("Sign in before using notes.");
   }
 
   const response = await fetch("/api/notes", {
-    method: "POST",
+    method,
     headers: {
-      "Content-Type": "application/json",
+      ...(body ? { "Content-Type": "application/json" } : {}),
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ organ, note }),
+    body: body ? JSON.stringify(body) : undefined,
   });
-  const payload = await response.json().catch(() => null) as NoteRow | { error?: string } | null;
+  const payload = await response.json().catch(() => null) as { error?: string } | unknown[] | NoteRow | null;
   if (!response.ok) {
     throw new Error(
-      payload && "error" in payload && payload.error
+      payload && !Array.isArray(payload) && "error" in payload && payload.error
         ? payload.error
-        : "Unable to save note.",
+        : "Unable to sync notes.",
     );
   }
-  return payload as NoteRow;
+  return payload;
+}
+
+export async function listUserNotes(): Promise<NoteRow[]> {
+  const payload = await notesApiRequest("GET");
+  return Array.isArray(payload) ? payload as NoteRow[] : [];
+}
+
+export async function createUserNote(organ: string, note: string): Promise<NoteRow> {
+  return await notesApiRequest("POST", { organ, note }) as NoteRow;
 }
 
 export async function updateUserNote(id: string, note: string): Promise<NoteRow> {
