@@ -22,6 +22,7 @@ import {
   X,
   ZoomIn,
   ClipboardCheck,
+  UserRound,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -39,6 +40,7 @@ import type {
   VanatomeHierarchyNode,
   VanatomeIsolationMode,
 } from "@vixotic/vanatome-react";
+import type { User } from "@supabase/supabase-js";
 import {
   createAnatomyData,
   type AnatomyData,
@@ -52,6 +54,8 @@ import {
 import { AIChatPanel } from "../anatomy-lens/components/panels/AIChatPanel";
 import { StickyNotesLayer } from "../anatomy-lens/components/ui/StickyNotes";
 import { QuizPanel } from "./QuizPanel";
+import { AuthDialog } from "./AuthDialog";
+import { supabase } from "../lib/supabase";
 
 type MobileNavigationPanel = "browse" | "systems" | null;
 type SystemLoadMode = "incremental" | "full-body";
@@ -300,6 +304,8 @@ function LoadedAnatomyExplorer({
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [rightTab, setRightTab] = useState<"info" | "ai" | "quiz">("info");
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [mobileNavigationPanel, setMobileNavigationPanel] =
     useState<MobileNavigationPanel>(null);
@@ -323,6 +329,21 @@ function LoadedAnatomyExplorer({
       ? `${systems.find((system) => system.id === activeSystemIds[0])?.name ?? "SYSTEM"} SCAN`
       : `${activeSystemIds.length} SYSTEMS SCAN`;
   const syncVisibleLayers = viewer.setVisibleLayers;
+
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (active) setAuthUser(data.user);
+    });
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => setAuthUser(session?.user ?? null),
+    );
+    return () => {
+      active = false;
+      authSubscription.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     syncVisibleLayers(activeSystemIds);
@@ -580,6 +601,15 @@ function LoadedAnatomyExplorer({
 
         <div className="topbar-actions">
           <button
+            className="icon-button account-button"
+            type="button"
+            onClick={() => setAuthOpen(true)}
+            aria-label={authUser ? "Open account" : "Sign in or create an account"}
+            title={authUser?.email ?? "Sign in or create an account"}
+          >
+            <UserRound size={18} />
+          </button>
+          <button
             className="icon-button"
             type="button"
             onClick={() => setLeftOpen((open) => !open)}
@@ -601,6 +631,12 @@ function LoadedAnatomyExplorer({
           </button>
         </div>
       </header>
+
+      <AuthDialog
+        open={authOpen}
+        user={authUser}
+        onClose={() => setAuthOpen(false)}
+      />
 
       <section
         className={`workspace ${leftOpen ? "" : "left-collapsed"} ${rightOpen ? "" : "right-collapsed"}`}
