@@ -42,6 +42,7 @@ export function AnatomyScene() {
   const [atlas, setAtlas] = useState<VanatomeAtlas | null>(null)
   const [error, setError] = useState<string | null>(null)
   const controller = useVanatomeController([])
+  const { focus } = controller
   const {
     selectedStructure,
     isolatedId,
@@ -91,9 +92,9 @@ export function AnatomyScene() {
 
   useEffect(() => {
     if (selectedAtlasId && cameraView.startsWith('focus:')) {
-      controller.focus(selectedAtlasId)
+      focus(selectedAtlasId)
     }
-  }, [cameraView, controller, selectedAtlasId])
+  }, [cameraView, focus, selectedAtlasId])
 
   useEffect(() => {
     ;(window as Window & { focusStructure?: (id: string) => boolean }).focusStructure = focusStructure
