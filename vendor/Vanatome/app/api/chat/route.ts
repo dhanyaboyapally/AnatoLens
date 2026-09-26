@@ -8,6 +8,7 @@ import {
 } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
+import atlasRegistry from "../../../public/models/z-anatomy-1.4.0-registry.json";
 
 const structureSchema = z.object({
   id: z.string(),
@@ -29,6 +30,16 @@ const requestSchema = z.object({
 });
 
 type ChatStructure = z.infer<typeof structureSchema>;
+
+const atlasLookupCatalog: ChatStructure[] = atlasRegistry.structures
+  .filter((structure) => structure.selectable !== false)
+  .map((structure) => ({
+    id: structure.id,
+    name: structure.name,
+    system: structure.system,
+    layer: structure.system,
+    parentId: structure.parentId,
+  }));
 
 function normalize(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -124,6 +135,12 @@ export async function POST(request: Request) {
     mode,
     structureCatalog,
   } = parsed.data;
+  const lookupCatalog = [
+    ...structureCatalog,
+    ...atlasLookupCatalog.filter(
+      (atlasStructure) => !structureCatalog.some(({ id }) => id === atlasStructure.id),
+    ),
+  ];
   const openai = createOpenAI({ apiKey });
 
   const result = streamText({
@@ -132,7 +149,7 @@ export async function POST(request: Request) {
       selectedStructure,
       visibleSystems,
       mode,
-      structureCatalog,
+      structureCatalog: lookupCatalog,
     }),
     messages: await convertToModelMessages(messages as UIMessage[]),
     stopWhen: stepCountIs(3),
@@ -144,7 +161,7 @@ export async function POST(request: Request) {
           query: z.string().describe("The structure name requested by the student"),
         }),
         execute: async ({ query }) => {
-          const structure = findStructure(query, structureCatalog);
+          const structure = findStructure(query, lookupCatalog);
           if (!structure) {
             return { found: false, query };
           }
@@ -153,6 +170,7 @@ export async function POST(request: Request) {
             action: "focus",
             structureId: structure.id,
             structureName: structure.name,
+            layer: structure.layer,
             structure,
           };
         },
