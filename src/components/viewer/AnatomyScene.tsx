@@ -117,6 +117,7 @@ export function AnatomyScene() {
       onSelect={id => selectStructure(id ? findAppStructure(atlas, id) ?? null : null)}
       onError={() => setError('Unable to load the 3D anatomy model.')}
       onEscape={() => selectStructure(null)}
+      enablePan
       className="h-full w-full"
       style={{ background: '#0a0e1a' }}
       ariaLabel="Interactive 3D anatomy viewer"
