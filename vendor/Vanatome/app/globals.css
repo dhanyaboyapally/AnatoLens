@@ -1735,6 +1735,39 @@ button {
   letter-spacing: 0.1em;
 }
 
+.sticky-notes-list {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 128px;
+  margin-bottom: 0.7rem;
+  overflow-y: auto;
+}
+
+.sticky-notes-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.4rem 0.45rem;
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  background: rgba(30, 41, 59, 0.55);
+  color: #cbd5e1;
+  font: 10px/1.35 var(--font-geist-sans);
+}
+
+.sticky-notes-list-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 0.25rem;
+  border-radius: 50%;
+}
+
+.sticky-notes-empty {
+  margin: 0;
+  color: #64748b;
+  font: 10px/1.4 var(--font-geist-sans);
+}
+
 .sticky-notes-colors {
   display: flex;
   gap: 0.5rem;
