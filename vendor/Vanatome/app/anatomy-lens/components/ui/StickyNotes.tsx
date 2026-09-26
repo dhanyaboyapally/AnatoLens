@@ -10,6 +10,7 @@ import {
   updateUserNote,
   type NoteRow,
 } from "../../../lib/notes";
+import { supabase } from "../../../lib/supabase";
 
 type NoteOwner = { id: string; name: string };
 
@@ -153,10 +154,25 @@ export function StickyNotesLayer({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedUserId, setResolvedUserId] = useState(userId);
+  const activeUserId = userId ?? resolvedUserId;
+
+  useEffect(() => {
+    setResolvedUserId(userId);
+    if (userId || !supabase) return;
+
+    void supabase.auth.getUser().then(({ data }) => {
+      setResolvedUserId(data.user?.id ?? null);
+    });
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => setResolvedUserId(session?.user?.id ?? null),
+    );
+    return () => authSubscription.subscription.unsubscribe();
+  }, [userId]);
 
   useEffect(() => {
     let active = true;
-    if (!userId) {
+    if (!activeUserId) {
       setNotes([]);
       setError(null);
       return () => {
@@ -179,10 +195,10 @@ export function StickyNotesLayer({
     return () => {
       active = false;
     };
-  }, [userId]);
+  }, [activeUserId]);
 
   const addNote = async () => {
-    if (!selectedStructure || !userId) {
+    if (!selectedStructure || !activeUserId) {
       setError("Sign in before creating notes.");
       return;
     }
@@ -264,7 +280,7 @@ export function StickyNotesLayer({
                   <button key={color.name} type="button" aria-label={`Use ${color.name} note`} onClick={() => setColorIndex(index)} style={{ backgroundColor: color.bg, borderColor: colorIndex % NOTE_COLORS.length === index ? color.border : "transparent" }} />
                 ))}
               </div>
-              <button type="button" className="sticky-notes-add" onClick={() => void addNote()} disabled={!selectedStructure || !userId || saving}>
+              <button type="button" className="sticky-notes-add" onClick={() => void addNote()} disabled={!selectedStructure || !activeUserId || saving}>
                 <Plus size={13} /> {saving ? "SAVING…" : "ADD NOTE"}
               </button>
               {error && <p className="sticky-notes-error" role="alert">{error}</p>}
