@@ -5,9 +5,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Brain,
-  CalendarDays,
   CheckCircle2,
-  Clock3,
   MessageSquare,
   Target,
   Trophy,
@@ -23,6 +21,8 @@ import {
   ATLAS_CATALOG_IS_DEMO,
   ATLAS_CATALOG_URL,
 } from "../config/atlas";
+import { getProgress, type QuizSession } from "../lib/quiz-api";
+import { supabase } from "../lib/supabase";
 
 const AnatomyScene = dynamic(
   () => import("./AnatomyScene").then((module) => module.AnatomyScene),
@@ -37,35 +37,21 @@ const AnatomyScene = dynamic(
   },
 );
 
-const CHAT_SESSIONS = [
-  {
-    topic: "Cardiovascular foundations",
-    organ: "Heart",
-    detail: "Chambers, circulation, and coronary supply",
-    date: "Today",
-    duration: "18 min",
-  },
-  {
-    topic: "Respiratory overview",
-    organ: "Lungs",
-    detail: "Gas exchange and pulmonary structure",
-    date: "Yesterday",
-    duration: "12 min",
-  },
-  {
-    topic: "Upper abdominal anatomy",
-    organ: "Liver",
-    detail: "Functions, position, and clinical landmarks",
-    date: "Sep 24",
-    duration: "22 min",
-  },
-];
+function formatQuizDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(value));
+}
 
-const QUIZ_SESSIONS = [
-  { organ: "Heart", score: "4 / 5", accuracy: "80%", date: "Today", status: "Review one topic" },
-  { organ: "Lungs", score: "5 / 5", accuracy: "100%", date: "Yesterday", status: "Strong result" },
-  { organ: "Liver", score: "3 / 5", accuracy: "60%", date: "Sep 24", status: "Keep practicing" },
-];
+function quizStatus(session: QuizSession) {
+  const accuracy = session.total_questions
+    ? session.score / session.total_questions
+    : 0;
+  if (accuracy === 1) return "Strong result";
+  if (accuracy < 0.6) return "Keep practicing";
+  return "Review one topic";
+}
 
 function SessionColumn({
   title,
@@ -102,6 +88,13 @@ export function ProgressDashboard() {
   );
   const [atlases, setAtlases] = useState<readonly VanatomeAtlas[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [quizSessions, setQuizSessions] = useState<QuizSession[]>([]);
+  const [progressSummary, setProgressSummary] = useState({
+    organs_studied: 0,
+    quiz_accuracy: 0,
+    completed_quizzes: 0,
+  });
+  const [progressState, setProgressState] = useState<"loading" | "signed-in" | "signed-out" | "error">("loading");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -114,6 +107,48 @@ export function ProgressDashboard() {
       });
     return () => controller.abort();
   }, [loader]);
+
+  useEffect(() => {
+    if (!supabase) {
+      setProgressState("error");
+      return;
+    }
+
+    let active = true;
+    const loadProgress = async (signedIn: boolean) => {
+      if (!signedIn) {
+        if (active) {
+          setQuizSessions([]);
+          setProgressSummary({ organs_studied: 0, quiz_accuracy: 0, completed_quizzes: 0 });
+          setProgressState("signed-out");
+        }
+        return;
+      }
+
+      setProgressState("loading");
+      try {
+        const progress = await getProgress();
+        if (!active) return;
+        setQuizSessions(progress.quiz_sessions);
+        setProgressSummary(progress.summary);
+        setProgressState("signed-in");
+      } catch {
+        if (active) setProgressState("error");
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data }) => {
+      void loadProgress(Boolean(data.session));
+    });
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => void loadProgress(Boolean(session)),
+    );
+
+    return () => {
+      active = false;
+      authSubscription.subscription.unsubscribe();
+    };
+  }, []);
 
   const visibleLayers = useMemo(
     () => [...new Set(atlases.flatMap((atlas) => atlas.structures.map((structure) => structure.layer)))],
@@ -134,7 +169,7 @@ export function ProgressDashboard() {
           </span>
         </Link>
         <div className="progress-topbar-status">
-          <span className="status-dot" /> DEMO PROGRESS DATA
+          <span className="status-dot" /> {progressState === "signed-in" ? "SAVED PROGRESS" : progressState === "loading" ? "LOADING PROGRESS" : "SIGN IN REQUIRED"}
         </div>
         <Link href="/" className="progress-back-link">
           <ArrowLeft size={15} /> BACK TO LAB
@@ -149,9 +184,9 @@ export function ProgressDashboard() {
             <p>Review the anatomy topics you have explored and tested.</p>
           </div>
           <div className="progress-stat-strip" aria-label="Progress summary">
-            <div><span>ORGANS STUDIED</span><strong>03</strong></div>
-            <div><span>QUIZ ACCURACY</span><strong>76%</strong></div>
-            <div><span>STUDY TIME</span><strong>52m</strong></div>
+            <div><span>ORGANS STUDIED</span><strong>{String(progressSummary.organs_studied).padStart(2, "0")}</strong></div>
+            <div><span>QUIZ ACCURACY</span><strong>{progressSummary.quiz_accuracy}%</strong></div>
+            <div><span>COMPLETED QUIZZES</span><strong>{progressSummary.completed_quizzes}</strong></div>
           </div>
         </header>
 
@@ -181,36 +216,44 @@ export function ProgressDashboard() {
             ) : null}
             <div className="progress-model-overlay">
               <span>FULL-BODY ATLAS</span>
-              <strong>3 regions visited</strong>
+              <strong>{progressSummary.organs_studied} regions visited</strong>
             </div>
           </div>
         </section>
 
         <section className="progress-session-grid" aria-label="Study session history">
           <SessionColumn title="Chat sessions" eyebrow="RECENT LEARNING" icon={MessageSquare}>
-            {CHAT_SESSIONS.map((session) => (
-              <article className="progress-session-item" key={`${session.organ}-${session.date}`}>
-                <div className="progress-session-item-icon"><Brain size={15} /></div>
-                <div className="progress-session-item-copy">
-                  <strong>{session.topic}</strong>
-                  <span>{session.organ} · {session.detail}</span>
-                </div>
-                <div className="progress-session-meta"><span><CalendarDays size={12} /> {session.date}</span><span><Clock3 size={12} /> {session.duration}</span></div>
-              </article>
-            ))}
+            <article className="progress-empty-state">
+              <Brain size={17} />
+              <strong>{progressState === "signed-out" ? "Sign in to view chat history" : "Chat history is not saved yet"}</strong>
+              <span>Chat persistence will be added after media attachments are supported.</span>
+            </article>
           </SessionColumn>
 
           <SessionColumn title="Quiz sessions" eyebrow="KNOWLEDGE CHECKS" icon={Trophy}>
-            {QUIZ_SESSIONS.map((session) => (
-              <article className="progress-session-item" key={`${session.organ}-${session.date}`}>
-                <div className="progress-session-item-icon quiz"><CheckCircle2 size={15} /></div>
-                <div className="progress-session-item-copy">
-                  <strong>{session.organ} quiz</strong>
-                  <span>{session.status}</span>
-                </div>
-                <div className="progress-quiz-score"><strong>{session.score}</strong><span>{session.accuracy} · {session.date}</span></div>
-              </article>
-            ))}
+            {progressState === "loading" ? (
+              <article className="progress-empty-state"><span>Loading saved quiz sessions…</span></article>
+            ) : progressState === "signed-out" ? (
+              <article className="progress-empty-state"><span>Sign in to view saved quiz sessions.</span></article>
+            ) : quizSessions.length === 0 ? (
+              <article className="progress-empty-state"><span>No completed quiz sessions yet.</span></article>
+            ) : (
+              quizSessions.map((session) => {
+                const accuracy = session.total_questions
+                  ? Math.round((session.score / session.total_questions) * 100)
+                  : 0;
+                return (
+                  <article className="progress-session-item" key={session.id}>
+                    <div className="progress-session-item-icon quiz"><CheckCircle2 size={15} /></div>
+                    <div className="progress-session-item-copy">
+                      <strong>{session.organ_id} quiz</strong>
+                      <span>{quizStatus(session)}</span>
+                    </div>
+                    <div className="progress-quiz-score"><strong>{session.score} / {session.total_questions}</strong><span>{accuracy}% · {formatQuizDate(session.created_at)}</span></div>
+                  </article>
+                );
+              })
+            )}
           </SessionColumn>
         </section>
       </div>
