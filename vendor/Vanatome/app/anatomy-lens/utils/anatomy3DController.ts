@@ -56,6 +56,13 @@ export const REGION_TO_CAMERA_KEY: Record<string, string> = {
 // All other paths (AI, buttons, voice) call this.
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function focusStructure(idOrName: string): boolean {
+  const bridge = typeof window !== 'undefined'
+    ? (window as Window & {
+        focusVanatomeStructure?: (idOrName: string) => boolean
+      }).focusVanatomeStructure
+    : undefined
+
+  if (bridge) return bridge(idOrName)
   return useAnatomyStore.getState().focusStructure(idOrName)
 }
 
@@ -181,4 +188,3 @@ export function executeAIActions(actions: AIAction[]) {
     }
   }
 }
-

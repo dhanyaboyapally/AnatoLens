@@ -393,6 +393,29 @@ function LoadedAnatomyExplorer({
     setQuery("");
   };
 
+  useEffect(() => {
+    (window as Window & {
+      focusVanatomeStructure?: (idOrName: string) => boolean;
+    }).focusVanatomeStructure = (idOrName) => {
+      const needle = idOrName.trim().toLowerCase();
+      const structure = anatomyRegistry.find((candidate) =>
+        candidate.id.toLowerCase() === needle ||
+        candidate.name.toLowerCase() === needle ||
+        candidate.name.toLowerCase().includes(needle),
+      );
+      if (!structure) return false;
+      choose(structure.id);
+      viewer.focus(structure.id);
+      return true;
+    };
+
+    return () => {
+      delete (window as Window & {
+        focusVanatomeStructure?: (idOrName: string) => boolean;
+      }).focusVanatomeStructure;
+    };
+  }, [anatomyRegistry, choose, viewer]);
+
   const openStructureMenu = (event: VanatomeContextMenuEvent) => {
     const menuWidth = 280;
     const menuHeight = 280;
