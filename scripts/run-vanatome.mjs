@@ -16,6 +16,7 @@ function run(command, args) {
         ...process.env,
         WRANGLER_LOG_PATH: ".wrangler/wrangler.log",
       },
+      shell: process.platform === "win32",
       stdio: "inherit",
     });
 
