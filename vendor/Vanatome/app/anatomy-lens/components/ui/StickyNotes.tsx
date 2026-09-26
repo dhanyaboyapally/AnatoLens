@@ -22,6 +22,7 @@ type Note = {
   x: number;
   y: number;
   color: string;
+  updatedAt: string;
   isDraft?: boolean;
 };
 
@@ -42,6 +43,7 @@ function mapNote(row: NoteRow, index: number): Note {
     x: Math.max(12, window.innerWidth / 2 - 100),
     y: 110 + (index % 4) * 18,
     color: NOTE_COLORS[index % NOTE_COLORS.length].name,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -49,11 +51,13 @@ function StickyNoteCard({
   note,
   onDelete,
   onUpdate,
+  onCancel,
   autoEdit = false,
 }: {
   note: Note;
   onDelete: (id: string) => void;
   onUpdate: (id: string, text: string, x: number, y: number) => void | Promise<void>;
+  onCancel: (id: string) => void;
   autoEdit?: boolean;
 }) {
   const color = NOTE_COLORS.find((item) => item.name === note.color) ?? NOTE_COLORS[0];
@@ -93,6 +97,16 @@ function StickyNoteCard({
     setEditing(false);
   };
 
+  const cancelEdit = () => {
+    if (note.isDraft) {
+      onDelete(note.id);
+      return;
+    }
+    setDraft(note.text);
+    setEditing(false);
+    onCancel(note.id);
+  };
+
   useEffect(() => {
     if (editing) textRef.current?.focus();
   }, [editing]);
@@ -112,10 +126,25 @@ function StickyNoteCard({
       <div className="sticky-note-header" style={{ backgroundColor: `${color.border}22`, borderColor: `${color.border}30` }}>
         <GripVertical size={13} style={{ color: color.text, opacity: 0.55 }} />
         <span style={{ color: color.text }}>{note.structureName}</span>
-        <button type="button" onClick={() => setEditing((value) => !value)} aria-label="Edit note">
+        <button
+            type="button"
+            onClick={() => {
+              if (editing) {
+                void saveEdit();
+              } else {
+                setDraft(note.text);
+                setEditing(true);
+              }
+            }}
+            aria-label={editing ? "Save note" : "Edit note"}
+          >
           {editing ? <Check size={12} style={{ color: color.text }} /> : <Pencil size={12} style={{ color: color.text }} />}
         </button>
-        <button type="button" onClick={() => onDelete(note.id)} aria-label="Delete note">
+        <button
+          type="button"
+          onClick={() => (editing ? cancelEdit() : onDelete(note.id))}
+          aria-label={editing ? "Cancel note edit" : "Delete note"}
+        >
           <X size={12} style={{ color: color.text }} />
         </button>
       </div>
@@ -133,7 +162,7 @@ function StickyNoteCard({
             style={{ color: color.text, caretColor: color.border }}
           />
         ) : (
-          <p style={{ color: color.text }} onDoubleClick={() => setEditing(true)}>
+          <p style={{ color: color.text }} onDoubleClick={() => { setDraft(note.text); setEditing(true); }}>
             {note.text || <span className="sticky-note-placeholder">Double-click to edit…</span>}
           </p>
         )}
@@ -215,6 +244,7 @@ export function StickyNotesLayer({
       x: Math.max(12, window.innerWidth / 2 - 100),
       y: 110,
       color: color.name,
+      updatedAt: "",
       isDraft: true,
     }]);
     setColorIndex((value) => value + 1);
@@ -235,6 +265,10 @@ export function StickyNotesLayer({
     }
   }, []);
 
+  const cancelEdit = useCallback((_id: string) => {
+    setError(null);
+  }, []);
+
   const updateNote = useCallback(async (id: string, text: string, x: number, y: number) => {
     setError(null);
     const note = notes.find((item) => item.id === id);
@@ -246,11 +280,19 @@ export function StickyNotesLayer({
         }
         const row = await createUserNote(note.structureId, text);
         setNotes((current) => current.map((item) => item.id === id
-          ? { ...mapNote(row, current.indexOf(item)), color: note.color, structureName: note.structureName }
+          ? {
+            ...mapNote(row, current.indexOf(item)),
+            x: note.x,
+            y: note.y,
+            color: note.color,
+            structureName: note.structureName,
+          }
           : item));
       } else {
-        await updateUserNote(id, text);
-        setNotes((current) => current.map((item) => item.id === id ? { ...item, text, x, y } : item));
+        const row = await updateUserNote(id, text);
+        setNotes((current) => current.map((item) => item.id === id
+          ? { ...item, text: row.note, x, y, updatedAt: row.updated_at }
+          : item));
       }
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "Unable to update note.");
@@ -314,7 +356,7 @@ export function StickyNotesLayer({
         </AnimatePresence>
       </div>
       <AnimatePresence>
-        {visibleNotes.map((note) => <StickyNoteCard key={note.id} note={note} autoEdit={note.isDraft} onDelete={deleteNote} onUpdate={updateNote} />)}
+        {visibleNotes.map((note) => <StickyNoteCard key={note.id} note={note} autoEdit={note.isDraft} onDelete={deleteNote} onCancel={cancelEdit} onUpdate={updateNote} />)}
       </AnimatePresence>
     </>
   );
