@@ -1735,6 +1735,20 @@ button {
   letter-spacing: 0.1em;
 }
 
+.sticky-notes-status {
+  margin: -0.3rem 0 0.65rem;
+  font: 9px var(--font-geist-mono);
+  letter-spacing: 0.06em;
+}
+
+.sticky-notes-status.ready {
+  color: #86efac;
+}
+
+.sticky-notes-status.needs-auth {
+  color: #fda4af;
+}
+
 .sticky-notes-list {
   display: grid;
   gap: 0.35rem;
