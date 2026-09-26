@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   X,
   ZoomIn,
+  ClipboardCheck,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +50,7 @@ import {
   ATLAS_CATALOG_URL,
 } from "../config/atlas";
 import { AIChatPanel } from "../anatomy-lens/components/panels/AIChatPanel";
+import { QuizPanel } from "./QuizPanel";
 
 type MobileNavigationPanel = "browse" | "systems" | null;
 type SystemLoadMode = "incremental" | "full-body";
@@ -296,7 +298,7 @@ function LoadedAnatomyExplorer({
   const [query, setQuery] = useState("");
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const [rightTab, setRightTab] = useState<"info" | "ai">("info");
+  const [rightTab, setRightTab] = useState<"info" | "ai" | "quiz">("info");
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [mobileNavigationPanel, setMobileNavigationPanel] =
     useState<MobileNavigationPanel>(null);
@@ -800,7 +802,7 @@ function LoadedAnatomyExplorer({
         {rightOpen && (
           <aside
             id="anatomy-details"
-            className={`info-panel ${rightTab === "ai" ? "ai-panel" : ""} ${mobilePanelOpen ? "mobile-open" : ""}`}
+            className={`info-panel ${rightTab === "ai" || rightTab === "quiz" ? "ai-panel" : ""} ${mobilePanelOpen ? "mobile-open" : ""}`}
             aria-label="Anatomy details"
             aria-hidden={
               isCompact && !mobilePanelOpen ? true : undefined
@@ -829,6 +831,16 @@ function LoadedAnatomyExplorer({
               >
                 <MessageSquare size={14} />
                 AI
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rightTab === "quiz"}
+                className={rightTab === "quiz" ? "active" : ""}
+                onClick={() => setRightTab("quiz")}
+              >
+                <ClipboardCheck size={14} />
+                Quiz
               </button>
             </div>
 
@@ -861,6 +873,10 @@ function LoadedAnatomyExplorer({
                     return true;
                   }}
                 />
+              </div>
+            ) : rightTab === "quiz" ? (
+              <div className="ai-tab-content quiz-tab-content">
+                <QuizPanel selectedStructure={selected} />
               </div>
             ) : selected ? (
               <>
