@@ -139,12 +139,11 @@ export function AnatomyScene() {
         isolatedId={isolatedAtlasId}
         hiddenIds={hiddenAtlasIds}
         visibleLayers={visibleLayers}
-        displayMode="xray"
+        displayMode="normal"
         appearance={{
           bodyShellId: null,
           skeletonId: null,
-          defaultOpacity: 0.72,
-          xrayOpacity: 0.42,
+          defaultOpacity: 1,
         }}
         focusRequestKey={controller.focusRequestKey}
         resetViewKey={controller.resetViewKey}
