@@ -587,7 +587,10 @@ function LoadedAnatomyExplorer({
             <div className="brand-name">AnatomyLens</div>
             <div className="brand-subtitle">INTERACTIVE ANATOMY LAB</div>
           </div>
-          <StickyNotesLayer selectedStructure={selected} />
+          <StickyNotesLayer
+            selectedStructure={selected}
+            userId={authUser?.id ?? null}
+          />
         </div>
 
         <div className="status-pill">
