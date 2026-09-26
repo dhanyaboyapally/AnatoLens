@@ -30,7 +30,9 @@ function run(command, args) {
 }
 
 try {
-  await run(npmCommand, ["run", "package:build"]);
+  if (mode === "build") {
+    await run(npmCommand, ["run", "package:build"]);
+  }
   await run(npxCommand, ["vinext", mode]);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
