@@ -10,6 +10,7 @@ import { useAnatomyStore } from '../../store/anatomyStore'
 import type { AnatomicalStructure } from '../../types/anatomy'
 
 const atlasLoader = createOfficialHumanAtlas()
+const INITIAL_CAMERA_POSITION = [0, 0, 5.8] as const
 
 function findAtlasId(atlas: VanatomeAtlas, structure: AnatomicalStructure | null) {
   if (!structure) return null
@@ -118,6 +119,7 @@ export function AnatomyScene() {
       onError={() => setError('Unable to load the 3D anatomy model.')}
       onEscape={() => selectStructure(null)}
       enablePan
+      initialCameraPosition={INITIAL_CAMERA_POSITION}
       className="h-full w-full"
       style={{ background: '#0a0e1a' }}
       ariaLabel="Interactive 3D anatomy viewer"
