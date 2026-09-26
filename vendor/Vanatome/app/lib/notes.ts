@@ -55,14 +55,17 @@ export async function createUserNote(organ: string, note: string): Promise<NoteR
   return data as NoteRow;
 }
 
-export async function updateUserNote(id: string, note: string): Promise<void> {
+export async function updateUserNote(id: string, note: string): Promise<NoteRow> {
   const user = await currentUser();
-  const { error } = await requireSupabase()
+  const { data, error } = await requireSupabase()
     .from("notes")
     .update({ note })
+    .select("id,user_id,organ,note,created_at,updated_at")
     .eq("id", id)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .single();
   if (error) throw error;
+  return data as NoteRow;
 }
 
 export async function deleteUserNote(id: string): Promise<void> {
