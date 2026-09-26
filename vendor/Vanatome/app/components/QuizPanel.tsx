@@ -24,11 +24,13 @@ const QUESTION_BANK: Record<string, QuizQuestion[]> = {
   ],
 };
 
-const FALLBACK_QUESTIONS: QuizQuestion[] = [
-  { question: "Which body system contains this structure?", options: ["Cardiovascular", "Digestive", "Respiratory", "Nervous"], answer: "Digestive" },
-  { question: "What is the best first step when studying this structure?", options: ["Identify its location", "Ignore its relationships", "Study without a model", "Memorize unrelated facts"], answer: "Identify its location" },
-  { question: "Which detail is most useful for understanding an organ?", options: ["Its function", "Its screen position", "Its file name", "Its display color"], answer: "Its function" },
-];
+function fallbackQuestions(structure: AnatomyStructure): QuizQuestion[] {
+  return [
+    { question: "Which body system contains this structure?", options: [structure.system, "Cardiovascular", "Respiratory", "Nervous"].filter((option, index, options) => options.indexOf(option) === index), answer: structure.system },
+    { question: "What is the best first step when studying this structure?", options: ["Identify its location", "Ignore its relationships", "Study without a model", "Memorize unrelated facts"], answer: "Identify its location" },
+    { question: "Which detail is most useful for understanding an organ?", options: ["Its function", "Its screen position", "Its file name", "Its display color"], answer: "Its function" },
+  ];
+}
 
 type QuizPanelProps = {
   selectedStructure: AnatomyStructure | null;
@@ -36,7 +38,7 @@ type QuizPanelProps = {
 
 export function QuizPanel({ selectedStructure }: QuizPanelProps) {
   const questions = selectedStructure
-    ? QUESTION_BANK[selectedStructure.id] ?? FALLBACK_QUESTIONS
+    ? QUESTION_BANK[selectedStructure.id] ?? fallbackQuestions(selectedStructure)
     : [];
   const [started, setStarted] = useState(false);
   const [questionIndex, setQuestionIndex] = useState(0);
