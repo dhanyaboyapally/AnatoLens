@@ -144,9 +144,11 @@ export function StickyNotesLayer({
   selectedStructure,
   userId,
 }: {
-  selectedStructure: NoteOwner | null;
-  userId: string | null;
+  selectedStructure?: NoteOwner | null;
+  userId?: string | null;
 }) {
+  selectedStructure ??= null;
+  userId ??= null;
   const [notes, setNotes] = useState<Note[]>([]);
   const [open, setOpen] = useState(false);
   const [colorIndex, setColorIndex] = useState(0);
