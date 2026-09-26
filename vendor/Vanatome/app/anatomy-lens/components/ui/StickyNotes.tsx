@@ -261,6 +261,9 @@ export function StickyNotesLayer({
               <span className="sticky-notes-menu-label">
                 {selectedStructure ? `${selectedStructure.name} NOTES` : "SIGN IN AND SELECT AN ORGAN"}
               </span>
+              <p className={`sticky-notes-status ${activeUserId ? "ready" : "needs-auth"}`}>
+                {activeUserId ? "ACCOUNT SYNC ACTIVE" : "SIGN IN REQUIRED TO SAVE NOTES"}
+              </p>
               {loading && <p className="sticky-notes-empty">Loading saved notes…</p>}
               {selectedStructure && (
                 <div className="sticky-notes-list" aria-label={`Saved notes for ${selectedStructure.name}`}>
@@ -282,7 +285,7 @@ export function StickyNotesLayer({
                   <button key={color.name} type="button" aria-label={`Use ${color.name} note`} onClick={() => setColorIndex(index)} style={{ backgroundColor: color.bg, borderColor: colorIndex % NOTE_COLORS.length === index ? color.border : "transparent" }} />
                 ))}
               </div>
-              <button type="button" className="sticky-notes-add" onClick={() => void addNote()} disabled={!selectedStructure || !activeUserId || saving}>
+              <button type="button" className="sticky-notes-add" onClick={() => void addNote()} disabled={!selectedStructure || saving}>
                 <Plus size={13} /> {saving ? "SAVING…" : "ADD NOTE"}
               </button>
               {error && <p className="sticky-notes-error" role="alert">{error}</p>}
