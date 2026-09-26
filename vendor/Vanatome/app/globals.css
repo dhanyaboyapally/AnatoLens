@@ -1704,6 +1704,151 @@ button {
   overflow: hidden;
 }
 
+.sticky-notes-control {
+  position: relative;
+  z-index: 60;
+}
+
+.sticky-notes-button.active {
+  border-color: rgba(250, 204, 21, 0.55);
+  background: rgba(250, 204, 21, 0.14);
+  color: #fde68a;
+}
+
+.sticky-notes-menu {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  left: 0;
+  width: 220px;
+  padding: 0.75rem;
+  border: 1px solid rgba(250, 204, 21, 0.25);
+  background: rgba(10, 14, 26, 0.96);
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(14px);
+}
+
+.sticky-notes-menu-label {
+  display: block;
+  margin-bottom: 0.65rem;
+  color: #94a3b8;
+  font: 9px var(--font-geist-mono);
+  letter-spacing: 0.1em;
+}
+
+.sticky-notes-colors {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.7rem;
+}
+
+.sticky-notes-colors button {
+  width: 22px;
+  height: 22px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.sticky-notes-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.55rem;
+  border: 1px solid rgba(250, 204, 21, 0.3);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde68a;
+  cursor: pointer;
+  font: 9px var(--font-geist-mono);
+  letter-spacing: 0.08em;
+}
+
+.sticky-notes-add:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.sticky-notes-menu small {
+  display: block;
+  margin-top: 0.6rem;
+  color: #64748b;
+  font: 10px var(--font-geist-sans);
+  text-align: center;
+}
+
+.sticky-note-card {
+  position: fixed;
+  z-index: 50;
+  width: 220px;
+  overflow: hidden;
+  border: 1.5px solid;
+  border-radius: 10px;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.35);
+  user-select: none;
+  touch-action: none;
+}
+
+.sticky-note-header {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 30px;
+  padding: 0.35rem 0.45rem;
+  border-bottom: 1px solid;
+  cursor: grab;
+  font: 9px var(--font-geist-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sticky-note-header:active {
+  cursor: grabbing;
+}
+
+.sticky-note-header span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sticky-note-header button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sticky-note-body {
+  padding: 0.7rem;
+}
+
+.sticky-note-body p,
+.sticky-note-body textarea {
+  width: 100%;
+  min-height: 58px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  font: 12px/1.45 var(--font-geist-sans);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.sticky-note-body textarea {
+  resize: none;
+  outline: none;
+}
+
+.sticky-note-placeholder {
+  opacity: 0.45;
+}
+
 .ai-panel .detail-tabs {
   margin: 0 1.25rem 0.75rem;
 }
