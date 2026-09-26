@@ -9,6 +9,7 @@ import {
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import atlasRegistry from "../../../public/models/z-anatomy-1.4.0-registry.json";
+import { searchLearningResources } from "../../lib/learning-resources";
 
 const structureSchema = z.object({
   id: z.string(),
@@ -69,6 +70,23 @@ function findStructure(query: string, catalog: ChatStructure[]) {
     ?.structure;
 }
 
+function cleanMermaidCode(code: string) {
+  return code
+    .trim()
+    .replace(/^```(?:mermaid)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function validateMermaidCode(code: string) {
+  const cleaned = cleanMermaidCode(code);
+  const startsWithDiagramType = /^(flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|erDiagram|mindmap|timeline)\b/i.test(cleaned);
+  if (!startsWithDiagramType || cleaned.length > 6000 || /<\/?script\b/i.test(cleaned)) {
+    return null;
+  }
+  return cleaned;
+}
+
 function buildInstructions({
   selectedStructure,
   visibleSystems,
@@ -95,6 +113,9 @@ Teaching rules:
 - Ground structure names and navigation targets in the supplied atlas catalog. Do not invent atlas IDs.
 - If the requested structure is found, call focusStructure before explaining it.
 - If it is not found, say so and ask the student to choose a visible structure or clarify the name.
+- Use createDiagram for processes, pathways, cycles, or relationships that benefit from a visual explanation. Return one concise diagram, not a full lecture.
+- Use findLearningResource only when an anatomy image or video would materially improve the explanation. Search for only one resource type per response and never use it for a simple factual answer.
+- Keep resource queries specific, educational, and grounded in the selected anatomy structure. Mention the source when you show a resource.
 - The current mode is: ${mode}.
 - Visible systems: ${visibleSystems.join(", ") || "none provided"}.
 
@@ -152,7 +173,7 @@ export async function POST(request: Request) {
       structureCatalog: lookupCatalog,
     }),
     messages: await convertToModelMessages(messages as UIMessage[]),
-    stopWhen: stepCountIs(3),
+    stopWhen: stepCountIs(4),
     tools: {
       focusStructure: tool({
         description:
@@ -173,6 +194,58 @@ export async function POST(request: Request) {
             layer: structure.layer,
             structure,
           };
+        },
+      }),
+      createDiagram: tool({
+        description:
+          "Create one concise Mermaid diagram for an anatomy process, pathway, cycle, or relationship. Use only when a diagram improves the teaching explanation.",
+        inputSchema: z.object({
+          title: z.string().trim().min(1).max(120),
+          code: z.string().trim().min(1).max(7000),
+        }),
+        execute: async ({ title, code }) => {
+          const validCode = validateMermaidCode(code);
+          if (!validCode) {
+            return {
+              type: "diagram" as const,
+              valid: false,
+              title,
+              message: "The diagram could not be safely rendered.",
+            };
+          }
+          return {
+            type: "diagram" as const,
+            valid: true,
+            title,
+            code: validCode,
+          };
+        },
+      }),
+      findLearningResource: tool({
+        description:
+          "Find up to three educational anatomy images or YouTube videos when visual material would improve the explanation. Use only one type per response and do not call this for simple factual questions.",
+        inputSchema: z.object({
+          type: z.enum(["image", "video"]),
+          query: z.string().trim().min(3).max(160),
+        }),
+        execute: async ({ type, query }) => {
+          try {
+            return {
+              type: "learning-resources" as const,
+              resourceType: type,
+              query,
+              ...(await searchLearningResources(type, query)),
+            };
+          } catch (error) {
+            return {
+              type: "learning-resources" as const,
+              resourceType: type,
+              query,
+              available: false,
+              items: [],
+              message: error instanceof Error ? error.message : "Resource search failed.",
+            };
+          }
         },
       }),
     },
