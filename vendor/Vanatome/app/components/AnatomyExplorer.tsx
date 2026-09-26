@@ -50,6 +50,7 @@ import {
   ATLAS_CATALOG_URL,
 } from "../config/atlas";
 import { AIChatPanel } from "../anatomy-lens/components/panels/AIChatPanel";
+import { StickyNotesLayer } from "../anatomy-lens/components/ui/StickyNotes";
 import { QuizPanel } from "./QuizPanel";
 
 type MobileNavigationPanel = "browse" | "systems" | null;
@@ -565,6 +566,7 @@ function LoadedAnatomyExplorer({
             <div className="brand-name">AnatomyLens</div>
             <div className="brand-subtitle">INTERACTIVE ANATOMY LAB</div>
           </div>
+          <StickyNotesLayer selectedStructure={selected} />
         </div>
 
         <div className="status-pill">
