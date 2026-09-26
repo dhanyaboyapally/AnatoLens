@@ -12,6 +12,19 @@ import type { AnatomicalStructure } from '../../types/anatomy'
 
 const atlasLoader = createOfficialHumanAtlas()
 const INITIAL_CAMERA_POSITION = [0, 0, 5.8] as const
+const SYSTEM_COLORS: Record<string, string> = {
+  skeletal: '#d8c7a8',
+  muscular: '#9e3b3b',
+  cardiovascular: '#b63d45',
+  nervous: '#d6b642',
+  lymphatic: '#6aa878',
+  digestive: '#b77a57',
+  respiratory: '#cf8f93',
+  endocrine: '#b565a7',
+  reproductive: '#c56f8a',
+  urinary: '#b99478',
+  'regional-anatomy': '#c89b7d',
+}
 
 function findAtlasId(atlas: VanatomeAtlas, structure: AnatomicalStructure | null) {
   if (!structure) return null
@@ -139,6 +152,7 @@ export function AnatomyScene() {
         isolatedId={isolatedAtlasId}
         hiddenIds={hiddenAtlasIds}
         visibleLayers={visibleLayers}
+        systemColors={SYSTEM_COLORS}
         displayMode="normal"
         appearance={{
           bodyShellId: null,
