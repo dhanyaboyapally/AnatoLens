@@ -2462,6 +2462,26 @@ button {
   padding-top: 14px;
 }
 
+.progress-empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+  min-height: 8rem;
+  padding: 16px;
+  border: 1px dashed rgba(125, 227, 244, 0.18);
+  color: #8293a8;
+  font: 11px/1.5 var(--font-geist-sans);
+}
+
+.progress-empty-state svg {
+  color: #7de3f4;
+}
+
+.progress-empty-state strong {
+  color: #c7d5e5;
+  font-weight: 500;
+}
+
 .progress-session-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
