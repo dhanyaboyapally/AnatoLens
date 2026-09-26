@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workingDirectory = resolve(root, "vendor", "Vanatome");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
 const mode = process.argv[2] === "build" ? "build" : "dev";
 
 function run(command, args) {
@@ -29,7 +30,7 @@ function run(command, args) {
 
 try {
   await run(npmCommand, ["run", "package:build"]);
-  await run("npx", ["vinext", mode]);
+  await run(npxCommand, ["vinext", mode]);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
