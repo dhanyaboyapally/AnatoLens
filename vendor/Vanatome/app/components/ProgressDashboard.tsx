@@ -109,10 +109,7 @@ export function ProgressDashboard() {
   }, [loader]);
 
   useEffect(() => {
-    if (!supabase) {
-      setProgressState("error");
-      return;
-    }
+    if (!supabase) return;
 
     let active = true;
     const loadProgress = async (signedIn: boolean) => {
