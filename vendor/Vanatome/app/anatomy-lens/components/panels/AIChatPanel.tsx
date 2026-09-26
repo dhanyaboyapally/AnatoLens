@@ -6,6 +6,9 @@ import { DefaultChatTransport } from "ai";
 import { Brain, Send, Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { AnatomyStructure } from "../../../data/anatomy";
+import type { LearningResource } from "../../../lib/learning-resources";
+import { LearningResourceCard } from "./LearningResourceCard";
+import { MermaidDiagram } from "./MermaidDiagram";
 
 type ChatStructure = Pick<
   AnatomyStructure,
@@ -31,6 +34,55 @@ function messageText(message: { parts: Array<{ type: string; text?: string }> })
     .filter((part) => part.type === "text")
     .map((part) => part.text ?? "")
     .join("");
+}
+
+type ChatPart = {
+  type: string;
+  text?: string;
+  state?: string;
+  output?: unknown;
+};
+
+type RichMessagePart =
+  | { type: "diagram"; title: string; code: string }
+  | { type: "resources"; resources: LearningResource[] };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function richMessageParts(parts: ChatPart[]): RichMessagePart[] {
+  return parts.flatMap((part) => {
+    if (part.state !== "output-available" || !isRecord(part.output)) return [];
+
+    if (
+      part.type === "tool-createDiagram" &&
+      part.output.type === "diagram" &&
+      part.output.valid === true &&
+      typeof part.output.title === "string" &&
+      typeof part.output.code === "string"
+    ) {
+      return [{ type: "diagram" as const, title: part.output.title, code: part.output.code }];
+    }
+
+    if (
+      part.type === "tool-findLearningResource" &&
+      part.output.type === "learning-resources" &&
+      Array.isArray(part.output.items)
+    ) {
+      const resources = part.output.items.filter((item): item is LearningResource => (
+        isRecord(item) &&
+        (item.type === "image" || item.type === "video") &&
+        typeof item.title === "string" &&
+        typeof item.url === "string" &&
+        typeof item.thumbnailUrl === "string" &&
+        typeof item.source === "string"
+      ));
+      return resources.length ? [{ type: "resources" as const, resources }] : [];
+    }
+
+    return [];
+  });
 }
 
 function InlineMarkdown({ text }: { text: string }) {
@@ -80,11 +132,12 @@ function MarkdownText({ text }: { text: string }) {
   );
 }
 
-function MessageBubble({ message }: { message: { role: string; parts: Array<{ type: string; text?: string }> } }) {
+function MessageBubble({ message }: { message: { role: string; parts: ChatPart[] } }) {
   const isAI = message.role === "assistant";
   const content = messageText(message);
+  const richParts = richMessageParts(message.parts);
 
-  if (!content) return null;
+  if (!content && richParts.length === 0) return null;
 
   return (
     <motion.div
@@ -108,7 +161,12 @@ function MessageBubble({ message }: { message: { role: string; parts: Array<{ ty
             : "bg-gradient-to-br from-cyan-600/30 to-blue-600/20 border border-cyan-500/25 text-gray-100 rounded-tr-sm"
         }`}
       >
-        <MarkdownText text={content} />
+        {content && <MarkdownText text={content} />}
+        {richParts.map((part, index) => part.type === "diagram" ? (
+          <MermaidDiagram key={`diagram-${index}`} title={part.title} code={part.code} />
+        ) : (
+          <LearningResourceCard key={`resources-${index}`} resources={part.resources} />
+        ))}
       </div>
     </motion.div>
   );
