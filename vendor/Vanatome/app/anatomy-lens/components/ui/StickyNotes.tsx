@@ -195,6 +195,21 @@ export function StickyNotesLayer({ selectedStructure }: { selectedStructure: Not
               <span className="sticky-notes-menu-label">
                 {selectedStructure ? `${selectedStructure.name} NOTES` : "SELECT AN ORGAN FIRST"}
               </span>
+              {selectedStructure && (
+                <div className="sticky-notes-list" aria-label={`Saved notes for ${selectedStructure.name}`}>
+                  {visibleNotes.length > 0 ? visibleNotes.map((note) => {
+                    const color = NOTE_COLORS.find((item) => item.name === note.color) ?? NOTE_COLORS[0];
+                    return (
+                      <div className="sticky-notes-list-item" key={note.id}>
+                        <span className="sticky-notes-list-dot" style={{ backgroundColor: color.border }} />
+                        <span>{note.text.trim() || "Empty note — double-click the note to edit"}</span>
+                      </div>
+                    );
+                  }) : (
+                    <p className="sticky-notes-empty">No saved notes for this structure yet.</p>
+                  )}
+                </div>
+              )}
               <div className="sticky-notes-colors">
                 {NOTE_COLORS.map((color, index) => (
                   <button key={color.name} type="button" aria-label={`Use ${color.name} note`} onClick={() => setColorIndex(index)} style={{ backgroundColor: color.bg, borderColor: colorIndex % NOTE_COLORS.length === index ? color.border : "transparent" }} />
