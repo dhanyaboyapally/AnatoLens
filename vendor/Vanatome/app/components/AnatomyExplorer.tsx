@@ -847,8 +847,15 @@ function LoadedAnatomyExplorer({
                   selectedStructure={selected}
                   availableStructures={anatomyRegistry}
                   visibleSystems={activeSystemIds}
-                  onFocusStructure={(id) => {
-                    if (!anatomyById[id]) return false;
+                  onFocusStructure={(id, layer) => {
+                    if (!anatomyById[id]) {
+                      if (layer && !activeSystemIds.includes(layer)) {
+                        onSystemsChange([...activeSystemIds, layer]);
+                      }
+                      viewer.select(id);
+                      viewer.focus(id);
+                      return true;
+                    }
                     choose(id);
                     viewer.focus(id);
                     return true;
