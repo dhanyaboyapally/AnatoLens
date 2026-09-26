@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, GripVertical, Pencil, Plus, StickyNote, X } from "lucide-react";
 import {
   createUserNote,
-  deleteUserNote,
   listUserNotes,
   updateUserNote,
   type NoteRow,
@@ -49,13 +48,15 @@ function mapNote(row: NoteRow, index: number): Note {
 
 function StickyNoteCard({
   note,
-  onDelete,
+  onDiscard,
+  onDismiss,
   onUpdate,
   onCancel,
   autoEdit = false,
 }: {
   note: Note;
-  onDelete: (id: string) => void;
+  onDiscard: (id: string) => void;
+  onDismiss: (id: string) => void;
   onUpdate: (id: string, text: string, x: number, y: number) => void | Promise<void>;
   onCancel: (id: string) => void;
   autoEdit?: boolean;
@@ -99,7 +100,7 @@ function StickyNoteCard({
 
   const cancelEdit = () => {
     if (note.isDraft) {
-      onDelete(note.id);
+      onDiscard(note.id);
       return;
     }
     setDraft(note.text);
@@ -142,8 +143,8 @@ function StickyNoteCard({
         </button>
         <button
           type="button"
-          onClick={() => (editing ? cancelEdit() : onDelete(note.id))}
-          aria-label={editing ? "Cancel note edit" : "Delete note"}
+          onClick={() => (editing ? cancelEdit() : onDismiss(note.id))}
+          aria-label={editing ? "Cancel note edit" : "Close note"}
         >
           <X size={12} style={{ color: color.text }} />
         </button>
