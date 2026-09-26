@@ -2172,6 +2172,128 @@ button {
   text-align: center;
 }
 
+.chat-diagram-card,
+.chat-resource-grid {
+  margin-top: 0.75rem;
+}
+
+.chat-diagram-card {
+  overflow: hidden;
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 0.7rem;
+  background: rgba(7, 18, 31, 0.78);
+}
+
+.chat-rich-card-heading {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  color: #bdf3ff;
+  font: 10px var(--font-geist-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chat-diagram-svg {
+  overflow-x: auto;
+  padding: 0.75rem;
+}
+
+.chat-diagram-svg svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: auto;
+}
+
+.chat-rich-card-loading,
+.chat-rich-card-error {
+  padding: 0.75rem;
+  color: #8293a8;
+  font-size: 11px;
+}
+
+.chat-rich-card-error {
+  color: #ff9d9d;
+}
+
+.chat-resource-grid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.chat-resource-card {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 0.65rem;
+  overflow: hidden;
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  border-radius: 0.65rem;
+  background: rgba(7, 18, 31, 0.72);
+  color: inherit;
+  text-decoration: none;
+}
+
+.chat-resource-card:hover {
+  border-color: rgba(0, 212, 255, 0.45);
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.chat-resource-thumbnail {
+  position: relative;
+  min-height: 62px;
+  background: #101d2d;
+}
+
+.chat-resource-thumbnail img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 62px;
+  object-fit: cover;
+}
+
+.chat-resource-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 999px;
+  color: white;
+  background: rgba(0, 0, 0, 0.65);
+  transform: translate(-50%, -50%);
+}
+
+.chat-resource-copy {
+  display: grid;
+  align-content: center;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.5rem 0.55rem 0.5rem 0;
+}
+
+.chat-resource-copy strong {
+  overflow: hidden;
+  color: #dbeafe;
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-resource-copy span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+  color: #71859d;
+  font: 9px var(--font-geist-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (min-width: 981px) {
   .info-panel.ai-panel {
     position: fixed;
