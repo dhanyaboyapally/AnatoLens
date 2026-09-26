@@ -1007,8 +1007,6 @@ function LoadedAnatomyExplorer({
         )}
       </section>
 
-      {learningPanelOpen && <AnatomyLensPanel />}
-
       <nav className="mobile-dock" aria-label="Mobile anatomy navigation">
         <button
           type="button"
