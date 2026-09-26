@@ -48,7 +48,6 @@ import {
   ATLAS_CATALOG_IS_DEMO,
   ATLAS_CATALOG_URL,
 } from "../config/atlas";
-import { AnatomyLensPanel } from "../anatomy-lens/components/AnatomyLensPanel";
 
 type MobileNavigationPanel = "browse" | "systems" | null;
 type SystemLoadMode = "incremental" | "full-body";
