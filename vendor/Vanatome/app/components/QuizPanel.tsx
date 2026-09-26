@@ -28,41 +28,33 @@ export function QuizPanel({
   const [status, setStatus] = useState<"idle" | "loading" | "active" | "complete">("idle");
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answered, setAnswered] = useState<number | null>(null);
-  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [questionLoadStatus, setQuestionLoadStatus] = useState<"loading" | "ready">("loading");
   const [savingAnswer, setSavingAnswer] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedId = selectedStructure?.id;
 
   useEffect(() => {
-    setAvailableQuestions([]);
-    setQuestions([]);
-    setSessionId(null);
-    setCompletion(null);
-    setStatus("idle");
-    setQuestionIndex(0);
-    setAnswered(null);
-    setError(null);
-
-    if (!selectedStructure || !isAuthenticated) return;
+    if (!selectedId || !isAuthenticated) return;
 
     let active = true;
-    setLoadingQuestions(true);
-    void listQuizQuestions(selectedStructure.id)
+    void listQuizQuestions(selectedId)
       .then((loadedQuestions) => {
-        if (active) setAvailableQuestions(loadedQuestions);
+        if (active) {
+          setAvailableQuestions(loadedQuestions);
+          setQuestionLoadStatus("ready");
+        }
       })
       .catch((reason: unknown) => {
         if (active) {
+          setQuestionLoadStatus("ready");
           setError(reason instanceof Error ? reason.message : "Unable to load quiz questions.");
         }
       })
-      .finally(() => {
-        if (active) setLoadingQuestions(false);
-      });
 
     return () => {
       active = false;
     };
-  }, [isAuthenticated, selectedStructure?.id]);
+  }, [isAuthenticated, selectedId]);
 
   if (!selectedStructure) {
     return <div className="quiz-empty">Select a structure in the model to begin a quiz.</div>;
@@ -158,6 +150,7 @@ export function QuizPanel({
   }
 
   const hasQuestions = availableQuestions.length > 0;
+  const loadingQuestions = questionLoadStatus === "loading";
   return (
     <div className="quiz-panel-content">
       <span className="eyebrow">KNOWLEDGE CHECK</span>
