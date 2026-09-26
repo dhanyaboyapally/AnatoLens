@@ -18,3 +18,19 @@ export function requireSupabase(): SupabaseClient {
   }
   return supabase;
 }
+
+export function createAuthenticatedSupabaseClient(accessToken: string): SupabaseClient {
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(
+      "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.",
+    );
+  }
+
+  return createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  });
+}
