@@ -21,6 +21,11 @@ export default defineConfig(async () => {
     optimizeDeps: {
       include: ["three", "@react-three/fiber", "@react-three/drei"],
     },
+    ssr: {
+      optimizeDeps: {
+        include: ["three", "@react-three/fiber", "@react-three/drei"],
+      },
+    },
     server: usePolling
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
