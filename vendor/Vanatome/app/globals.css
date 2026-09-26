@@ -1694,6 +1694,8 @@ button {
 }
 
 .info-panel.ai-panel {
+  display: flex;
+  flex-direction: column;
   padding: 1.25rem 0 0;
   overflow: hidden;
 }
@@ -1703,12 +1705,15 @@ button {
 }
 
 .ai-tab-content {
+  display: flex;
+  flex: 1 1 auto;
   min-height: 0;
-  height: calc(100% - 3.5rem);
   overflow: hidden;
 }
 
 .ai-tab-content > div {
+  display: flex;
+  flex: 1 1 auto;
   min-height: 0;
   height: 100%;
 }
