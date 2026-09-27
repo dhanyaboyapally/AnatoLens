@@ -86,18 +86,31 @@ function richMessageParts(parts: ChatPart[]): RichMessagePart[] {
 }
 
 function InlineMarkdown({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  const parts = text.split(/(!\[[^\]]*\]\(https?:\/\/[^)\s]+\)|\*\*[^*]+\*\*)/g);
   return (
     <>
-      {parts.map((part, index) =>
-        part.startsWith("**") && part.endsWith("**") ? (
+      {parts.map((part, index) => {
+        const image = part.match(/^!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)$/);
+        if (image) {
+          return (
+            <img
+              key={index}
+              className="chat-inline-image"
+              src={image[2]}
+              alt={image[1]}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          );
+        }
+        return part.startsWith("**") && part.endsWith("**") ? (
           <strong key={index} className="text-white font-semibold">
             {part.slice(2, -2)}
           </strong>
         ) : (
           <span key={index}>{part}</span>
-        ),
-      )}
+        );
+      })}
     </>
   );
 }
