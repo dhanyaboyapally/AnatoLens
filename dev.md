@@ -1,7 +1,7 @@
 # Project Name:
-**knowyourbody.ai**
+AnatoLens
 # One line elevator pitch:
-**KnowYourBody.ai - point at the body, ask anything, learn anatomy where it actually lives.**
+**point at the body, ask anything, learn anatomy where it actually lives.**
 
 <!-- On the 2nd page -->
 # Inspiration
