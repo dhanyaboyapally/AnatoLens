@@ -2216,6 +2216,16 @@ button {
   color: #ff9d9d;
 }
 
+.chat-inline-image {
+  display: block;
+  width: min(100%, 220px);
+  max-height: 160px;
+  margin: 0.5rem 0;
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 0.55rem;
+  object-fit: cover;
+}
+
 .chat-resource-grid {
   display: flex;
   overflow-x: auto;
