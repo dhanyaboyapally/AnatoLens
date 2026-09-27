@@ -47,6 +47,7 @@ import {
   type AnatomyData,
   type AnatomyStructure,
 } from "../data/anatomy";
+import { FUNCTION_SOURCES, GENERAL_ROLE_NOTE } from "../data/anatomy-functions";
 import {
   ATLAS_ATTRIBUTION_URL,
   ATLAS_CATALOG_IS_DEMO,
@@ -55,7 +56,7 @@ import {
 import { AIChatPanel } from "../anatomy-lens/components/panels/AIChatPanel";
 import { StickyNotesLayer } from "../anatomy-lens/components/ui/StickyNotes";
 import { QuizPanel } from "./QuizPanel";
-import { AuthDialog } from "./AuthDialog";
+import { AuthDialog, AuthPage, ThemeToggle, type ThemeMode } from "./AuthDialog";
 import { supabase } from "../lib/supabase";
 
 type MobileNavigationPanel = "browse" | "systems" | null;
@@ -87,6 +88,9 @@ export function AnatomyExplorer() {
   const [loaderState, setLoaderState] = useState<AtlasLoaderState>(
     loader.getState(),
   );
+  const [theme, setTheme] = useState<ThemeMode>("dark");
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authResolved, setAuthResolved] = useState(false);
   const [catalog, setCatalog] = useState<AtlasCatalog | null>(null);
   const [bundles, setBundles] = useState<readonly LoadedAtlasBundle[]>([]);
   const [activeSystemIds, setActiveSystemIds] = useState<readonly string[]>([
@@ -98,6 +102,51 @@ export function AnatomyExplorer() {
   const [attempt, setAttempt] = useState(0);
   const requestId = useRef(0);
   const activeController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem("anatomylens-theme");
+    const nextTheme = storedTheme === "light" ? "light" : "dark";
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+  }, []);
+
+  const toggleTheme = () => {
+    setTheme((currentTheme) => {
+      const nextTheme = currentTheme === "dark" ? "light" : "dark";
+      window.localStorage.setItem("anatomylens-theme", nextTheme);
+      document.documentElement.dataset.theme = nextTheme;
+      return nextTheme;
+    });
+  };
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthResolved(true);
+      return;
+    }
+
+    let active = true;
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (active) setAuthUser(session?.user ?? null);
+      },
+    );
+    void supabase.auth.getUser()
+      .then(({ data, error }) => {
+        if (active) setAuthUser(error ? null : data.user);
+      })
+      .catch(() => {
+        if (active) setAuthUser(null);
+      })
+      .finally(() => {
+        if (active) setAuthResolved(true);
+      });
+
+    return () => {
+      active = false;
+      authSubscription.subscription.unsubscribe();
+    };
+  }, []);
 
   const loadSystems = useCallback((
     systemIds: readonly string[],
@@ -151,6 +200,8 @@ export function AnatomyExplorer() {
   }, [deliveryMode, loader]);
 
   useEffect(() => {
+    if (!authResolved || !authUser) return;
+
     const controller = new AbortController();
     const unsubscribe = loader.subscribe(setLoaderState);
     void loader
@@ -177,15 +228,29 @@ export function AnatomyExplorer() {
       unsubscribe();
       controller.abort();
     };
-  }, [attempt, loader]);
+  }, [attempt, authResolved, authUser, loader]);
 
   useEffect(() => () => activeController.current?.abort(), []);
+
+  if (!authResolved) {
+    return (
+      <main className="auth-checking app-shell" aria-live="polite">
+        <span className="eyebrow">ANATOMY LENS ACCOUNT</span>
+        <div className="scanner-ring" />
+        <p>Checking your session</p>
+      </main>
+    );
+  }
+
+  if (!authUser) return <AuthPage theme={theme} onToggleTheme={toggleTheme} />;
 
   if (!catalog || bundles.length === 0) {
     return (
       <AtlasLoadScreen
         state={loaderState}
         onRetry={() => setAttempt((value) => value + 1)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
     );
   }
@@ -198,6 +263,9 @@ export function AnatomyExplorer() {
       deliveryMode={deliveryMode}
       switchingBundle={switchingBundle}
       bundleError={bundleError}
+      authUser={authUser}
+      theme={theme}
+      onToggleTheme={toggleTheme}
       onSystemsChange={loadSystems}
     />
   );
@@ -206,9 +274,13 @@ export function AnatomyExplorer() {
 function AtlasLoadScreen({
   state,
   onRetry,
+  theme,
+  onToggleTheme,
 }: {
   state: AtlasLoaderState;
   onRetry: () => void;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
 }) {
   const failed = state.status === "error";
   const message = state.status === "loading-bundle"
@@ -237,6 +309,7 @@ function AtlasLoadScreen({
           <span className="status-dot" />
           {failed ? "ATLAS OFFLINE" : "ATLAS CONNECTING"}
         </div>
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </header>
       <section className="atlas-load-state">
         {!failed && <div className="scanner-ring" aria-hidden="true" />}
@@ -273,6 +346,9 @@ function LoadedAnatomyExplorer({
   deliveryMode,
   switchingBundle,
   bundleError,
+  authUser,
+  theme,
+  onToggleTheme,
   onSystemsChange,
 }: {
   bundles: readonly LoadedAtlasBundle[];
@@ -281,6 +357,9 @@ function LoadedAnatomyExplorer({
   deliveryMode: SystemLoadMode;
   switchingBundle: boolean;
   bundleError: string | null;
+  authUser: User;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
   onSystemsChange: (
     systemIds: readonly string[],
     mode?: SystemLoadMode,
@@ -306,7 +385,6 @@ function LoadedAnatomyExplorer({
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [rightTab, setRightTab] = useState<"info" | "ai" | "quiz">("info");
-  const [authUser, setAuthUser] = useState<User | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [mobileNavigationPanel, setMobileNavigationPanel] =
@@ -331,21 +409,6 @@ function LoadedAnatomyExplorer({
       ? `${systems.find((system) => system.id === activeSystemIds[0])?.name ?? "SYSTEM"} SCAN`
       : `${activeSystemIds.length} SYSTEMS SCAN`;
   const syncVisibleLayers = viewer.setVisibleLayers;
-
-  useEffect(() => {
-    if (!supabase) return;
-    let active = true;
-    void supabase.auth.getUser().then(({ data }) => {
-      if (active) setAuthUser(data.user);
-    });
-    const { data: authSubscription } = supabase.auth.onAuthStateChange(
-      (_event, session) => setAuthUser(session?.user ?? null),
-    );
-    return () => {
-      active = false;
-      authSubscription.subscription.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     syncVisibleLayers(activeSystemIds);
@@ -560,6 +623,10 @@ function LoadedAnatomyExplorer({
     }
   };
 
+  const handleAccountClick = () => {
+    setAuthOpen(true);
+  };
+
   const toggleMobileNavigation = (
     panel: Exclude<MobileNavigationPanel, null>,
   ) => {
@@ -608,12 +675,9 @@ function LoadedAnatomyExplorer({
           <button
             className="icon-button account-button"
             type="button"
-            onClick={() => {
-              if (authUser) router.push("/progress");
-              else setAuthOpen(true);
-            }}
-            aria-label={authUser ? "Open learning progress" : "Sign in or create an account"}
-            title={authUser ? "Open learning progress" : "Sign in or create an account"}
+            onClick={handleAccountClick}
+            aria-label="Open account"
+            title="Open account"
           >
             <UserRound size={18} />
           </button>
@@ -638,12 +702,14 @@ function LoadedAnatomyExplorer({
             {rightPanelExpanded ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
           </button>
         </div>
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </header>
 
       <AuthDialog
         open={authOpen}
         user={authUser}
         onClose={() => setAuthOpen(false)}
+        onOpenProgress={() => router.push("/progress")}
       />
 
       <section
@@ -979,14 +1045,33 @@ function LoadedAnatomyExplorer({
                 </div>
 
                 <div className="data-block">
-                  <span className="data-label">PRIMARY FUNCTION</span>
+                  <span className="data-label">
+                    {selected.functionIsGeneral ? "GENERAL SYSTEM ROLE" : "FUNCTION"}
+                  </span>
                   <p>{selected.function}</p>
+                  {selected.functionIsGeneral && (
+                    <p className="function-scope-note">{GENERAL_ROLE_NOTE}</p>
+                  )}
+                  {FUNCTION_SOURCES[selected.id]?.map((source) => (
+                    <div className="data-source" key={source.href}>
+                      <a
+                        href={source.href}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {source.label}
+                      </a>
+                      <p>{source.note}</p>
+                    </div>
+                  ))}
                 </div>
 
-                <div className="data-block fact-block">
-                  <span className="data-label">SYSTEM NOTE</span>
-                  <p>{selected.fact}</p>
-                </div>
+                {!selected.factIsFallback && (
+                  <div className="data-block fact-block">
+                    <span className="data-label">SYSTEM NOTE</span>
+                    <p>{selected.fact}</p>
+                  </div>
+                )}
 
                 <div className="panel-meter">
                   <div className="meter-copy">
@@ -1122,6 +1207,14 @@ function LoadedAnatomyExplorer({
       </section>
 
       <nav className="mobile-dock" aria-label="Mobile anatomy navigation">
+        <button
+          type="button"
+          aria-label="Open account"
+          onClick={handleAccountClick}
+        >
+          <UserRound size={18} />
+          <span>ACCOUNT</span>
+        </button>
         <button
           type="button"
           className={mobileNavigationPanel === "browse" ? "active" : ""}

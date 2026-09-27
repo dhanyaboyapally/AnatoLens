@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, GripVertical, Pencil, Plus, StickyNote, X } from "lucide-react";
+import { Bold, Check, CheckCircle2, GripVertical, Highlighter, Italic, Pencil, Plus, StickyNote, Strikethrough, Underline, X } from "lucide-react";
 import {
   createUserNote,
   listUserNotes,
@@ -10,6 +11,7 @@ import {
   type NoteRow,
 } from "../../../lib/notes";
 import { supabase } from "../../../lib/supabase";
+import { editableHtmlToMarkup, markupToEditableHtml, parseStickyNoteContent, serializeStickyNoteContent } from "../../../lib/sticky-note-content";
 
 type NoteOwner = { id: string; name: string };
 
@@ -22,8 +24,69 @@ type Note = {
   y: number;
   color: string;
   updatedAt: string;
+  completed: boolean;
   isDraft?: boolean;
 };
+
+export function FormattedNoteText({ text }: { text: string }) {
+  return <span dangerouslySetInnerHTML={{ __html: markupToEditableHtml(text) }} />;
+}
+
+function RichNoteEditor({
+  initialText,
+  color,
+  onChange,
+  onSave,
+}: {
+  initialText: string;
+  color: string;
+  onChange: (text: string) => void;
+  onSave: () => void;
+}) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [initialHtml] = useState(() => markupToEditableHtml(initialText));
+
+  useEffect(() => {
+    editorRef.current?.focus();
+  }, []);
+
+  const runFormat = (command: string, value?: string) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, value);
+    if (editorRef.current) onChange(editableHtmlToMarkup(editorRef.current.innerHTML));
+  };
+
+  return (
+    <>
+      <div className="sticky-note-format-toolbar" role="toolbar" aria-label="Note formatting">
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runFormat("bold")} aria-label="Bold" title="Bold"><Bold size={13} /></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runFormat("italic")} aria-label="Italic" title="Italic"><Italic size={13} /></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runFormat("underline")} aria-label="Underline" title="Underline"><Underline size={13} /></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runFormat("hiliteColor", "#fde047")} aria-label="Highlight" title="Highlight"><Highlighter size={13} /></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runFormat("strikeThrough")} aria-label="Strikethrough" title="Strikethrough"><Strikethrough size={13} /></button>
+      </div>
+      <div
+        ref={editorRef}
+        className="sticky-note-editor"
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-label="Sticky note text"
+        aria-multiline="true"
+        data-placeholder="Write a note…"
+        dangerouslySetInnerHTML={{ __html: initialHtml }}
+        onInput={(event) => onChange(editableHtmlToMarkup(event.currentTarget.innerHTML))}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && event.metaKey) {
+            event.preventDefault();
+            onSave();
+          }
+        }}
+        style={{ color, caretColor: color }}
+      />
+    </>
+  );
+}
 
 const NOTE_COLORS = [
   { bg: "#fef08a", border: "#ca8a04", text: "#713f12", name: "yellow" },
@@ -34,15 +97,17 @@ const NOTE_COLORS = [
 ];
 
 function mapNote(row: NoteRow, index: number): Note {
+  const content = parseStickyNoteContent(row.note);
   return {
     id: row.id,
     structureId: row.organ,
     structureName: row.organ,
-    text: row.note,
+    text: content.content,
     x: Math.max(12, window.innerWidth / 2 - 100),
     y: 110 + (index % 4) * 18,
     color: NOTE_COLORS[index % NOTE_COLORS.length].name,
     updatedAt: row.updated_at,
+    completed: content.completed,
   };
 }
 
@@ -51,26 +116,32 @@ function StickyNoteCard({
   onDiscard,
   onDismiss,
   onUpdate,
-  onCancel,
   autoEdit = false,
 }: {
   note: Note;
   onDiscard: (id: string) => void;
   onDismiss: (id: string) => void;
-  onUpdate: (id: string, text: string, x: number, y: number) => void | Promise<void>;
-  onCancel: (id: string) => void;
+  onUpdate: (id: string, text: string, x: number, y: number, completed: boolean) => void | Promise<void>;
   autoEdit?: boolean;
 }) {
   const color = NOTE_COLORS.find((item) => item.name === note.color) ?? NOTE_COLORS[0];
   const [editing, setEditing] = useState(autoEdit);
-  const [draft, setDraft] = useState(note.text);
+  // The live editor content is tracked in a ref (not state) so that typing never
+  // triggers a re-render of this component. Re-rendering while `dangerouslySetInnerHTML`
+  // drives the contenteditable node would otherwise reset its DOM content mid-keystroke.
+  const draftRef = useRef(note.text);
+  // Only used to seed `RichNoteEditor`'s initial content when (re)entering edit mode;
+  // read at render time, so it must be state rather than a ref.
+  const [editSeed, setEditSeed] = useState(note.text);
   const [position, setPosition] = useState({ x: note.x, y: note.y });
+  const [completed, setCompleted] = useState(note.completed);
+  const saving = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
-  const textRef = useRef<HTMLTextAreaElement>(null);
 
   const startDragging = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (note.isDraft || (event.target as HTMLElement).closest("button, textarea")) return;
+    if (note.isDraft || (event.target as HTMLElement).closest("button, textarea, [contenteditable], .sticky-note-body")) return;
     dragging.current = true;
     offset.current = {
       x: event.clientX - position.x,
@@ -90,27 +161,37 @@ function StickyNoteCard({
   const finishDragging = () => {
     if (!dragging.current) return;
     dragging.current = false;
-    void onUpdate(note.id, draft, position.x, position.y);
+    void persist(draftRef.current, completed);
+  };
+
+  const persist = async (text: string, nextCompleted: boolean) => {
+    if (saving.current) return false;
+    saving.current = true;
+    setSaveError(null);
+    try {
+      await onUpdate(note.id, text, position.x, position.y, nextCompleted);
+      setCompleted(nextCompleted);
+      return true;
+    } catch (reason) {
+      setSaveError(reason instanceof Error ? reason.message : "Unable to save note.");
+      return false;
+    } finally {
+      saving.current = false;
+    }
   };
 
   const saveEdit = async () => {
-    await onUpdate(note.id, draft, position.x, position.y);
-    setEditing(false);
+    if (await persist(draftRef.current, true)) setEditing(false);
   };
 
-  const cancelEdit = () => {
-    if (note.isDraft) {
-      onDiscard(note.id);
-      return;
-    }
-    setDraft(note.text);
-    setEditing(false);
-    onCancel(note.id);
+  const toggleCompleted = async () => {
+    await persist(note.text, !completed);
   };
 
-  useEffect(() => {
-    if (editing) textRef.current?.focus();
-  }, [editing]);
+  const closeNote = () => {
+    if (note.isDraft) onDiscard(note.id);
+    else onDismiss(note.id);
+  };
 
   return (
     <motion.div
@@ -127,13 +208,24 @@ function StickyNoteCard({
       <div className="sticky-note-header" style={{ backgroundColor: `${color.border}22`, borderColor: `${color.border}30` }}>
         <GripVertical size={13} style={{ color: color.text, opacity: 0.55 }} />
         <span style={{ color: color.text }}>{note.structureName}</span>
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => void toggleCompleted()}
+            aria-label={completed ? "Mark note incomplete" : "Mark note complete"}
+            title={completed ? "Mark incomplete" : "Mark complete"}
+          >
+            <CheckCircle2 size={13} style={{ color: color.text, fill: completed ? `${color.border}40` : "none" }} />
+          </button>
+        )}
         <button
             type="button"
             onClick={() => {
               if (editing) {
                 void saveEdit();
               } else {
-                setDraft(note.text);
+                draftRef.current = note.text;
+                setEditSeed(note.text);
                 setEditing(true);
               }
             }}
@@ -143,28 +235,24 @@ function StickyNoteCard({
         </button>
         <button
           type="button"
-          onClick={() => (editing ? cancelEdit() : onDismiss(note.id))}
-          aria-label={editing ? "Cancel note edit" : "Close note"}
+          onClick={closeNote}
+          aria-label="Close note"
         >
           <X size={12} style={{ color: color.text }} />
         </button>
       </div>
+      {saveError && <p className="sticky-notes-error" role="alert">{saveError}</p>}
       <div className="sticky-note-body">
         {editing ? (
-          <textarea
-            ref={textRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && event.metaKey) void saveEdit();
-            }}
-            rows={4}
-            placeholder="Write a note…"
-            style={{ color: color.text, caretColor: color.border }}
+          <RichNoteEditor
+            initialText={editSeed}
+            color={color.text}
+            onChange={(text) => { draftRef.current = text; }}
+            onSave={() => void saveEdit()}
           />
         ) : (
-          <p style={{ color: color.text }} onDoubleClick={() => { setDraft(note.text); setEditing(true); }}>
-            {note.text || <span className="sticky-note-placeholder">Double-click to edit…</span>}
+          <p className={completed ? "completed" : ""} style={{ color: color.text }} onDoubleClick={() => { draftRef.current = note.text; setEditSeed(note.text); setEditing(true); }}>
+            {note.text ? <FormattedNoteText text={note.text} /> : <span className="sticky-note-placeholder">Double-click to edit…</span>}
           </p>
         )}
       </div>
@@ -191,6 +279,9 @@ export function StickyNotesLayer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resolvedUserId, setResolvedUserId] = useState(userId);
+  const [portalRoot] = useState<HTMLElement | null>(
+    () => typeof document === "undefined" ? null : document.body,
+  );
   const activeUserId = userId ?? resolvedUserId;
 
   useEffect(() => {
@@ -253,6 +344,7 @@ export function StickyNotesLayer({
       y: 110,
       color: color.name,
       updatedAt: "",
+      completed: false,
       isDraft: true,
     }]);
     setColorIndex((value) => value + 1);
@@ -276,11 +368,7 @@ export function StickyNotesLayer({
     });
   }, []);
 
-  const cancelEdit = useCallback((_id: string) => {
-    setError(null);
-  }, []);
-
-  const updateNote = useCallback(async (id: string, text: string, x: number, y: number) => {
+  const updateNote = useCallback(async (id: string, text: string, x: number, y: number, completed: boolean) => {
     setError(null);
     const note = notes.find((item) => item.id === id);
     if (!note) return;
@@ -289,7 +377,7 @@ export function StickyNotesLayer({
         if (!text.trim()) {
           throw new Error("Write something in the note before saving.");
         }
-        const row = await createUserNote(note.structureId, text);
+        const row = await createUserNote(note.structureId, serializeStickyNoteContent(text, completed));
         setNotes((current) => current.map((item) => item.id === id
           ? {
             ...mapNote(row, current.indexOf(item)),
@@ -297,12 +385,21 @@ export function StickyNotesLayer({
             y: note.y,
             color: note.color,
             structureName: note.structureName,
+            completed,
           }
           : item));
       } else {
-        const row = await updateUserNote(id, text);
+        const row = await updateUserNote(id, serializeStickyNoteContent(text, completed));
+        const savedContent = parseStickyNoteContent(row.note);
         setNotes((current) => current.map((item) => item.id === id
-          ? { ...item, text: row.note, x, y, updatedAt: row.updated_at }
+          ? {
+            ...item,
+            text: savedContent.content,
+            completed: savedContent.completed,
+            x,
+            y,
+            updatedAt: row.updated_at,
+          }
           : item));
       }
     } catch (reason: unknown) {
@@ -351,7 +448,7 @@ export function StickyNotesLayer({
                         aria-label={`Show note for ${note.structureName}`}
                       >
                         <span className="sticky-notes-list-dot" style={{ backgroundColor: color.border }} />
-                        <span>{note.text.trim() || "Empty note — double-click the note to edit"}</span>
+                        <span><FormattedNoteText text={note.text.trim() || "Empty note — double-click the note to edit"} /></span>
                       </button>
                     );
                   }) : (
@@ -373,9 +470,12 @@ export function StickyNotesLayer({
           )}
         </AnimatePresence>
       </div>
-      <AnimatePresence>
-        {floatingNotes.map((note) => <StickyNoteCard key={note.id} note={note} autoEdit={note.isDraft} onDiscard={discardDraft} onDismiss={dismissNote} onCancel={cancelEdit} onUpdate={updateNote} />)}
-      </AnimatePresence>
+      {portalRoot && createPortal(
+        <AnimatePresence>
+          {floatingNotes.map((note) => <StickyNoteCard key={note.id} note={note} autoEdit={note.isDraft} onDiscard={discardDraft} onDismiss={dismissNote} onUpdate={updateNote} />)}
+        </AnimatePresence>,
+        portalRoot,
+      )}
     </>
   );
 }

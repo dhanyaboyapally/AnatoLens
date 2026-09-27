@@ -8,6 +8,11 @@ import type {
   AnatomyStructure as AtlasStructure,
   LoadedAtlasBundle,
 } from "@vixotic/vanatome-atlas";
+import {
+  AUTHORED_FUNCTIONS,
+  FUNCTION_UNAVAILABLE,
+  SYSTEM_FUNCTION_ROLES,
+} from "./anatomy-functions";
 
 export type AnatomyRegion = "head" | "thorax" | "abdomen" | "pelvis";
 
@@ -17,10 +22,12 @@ export type AnatomyStructure = VanatomeStructure & {
   color: string;
   summary: NonNullable<VanatomeStructure["summary"]>;
   function: NonNullable<VanatomeStructure["function"]>;
+  functionIsGeneral: boolean;
   fact: NonNullable<VanatomeStructure["fact"]>;
+  factIsFallback: boolean;
 };
 
-type CuratedStructure = Omit<AnatomyStructure, "position" | "scale"> & {
+type CuratedStructure = Omit<AnatomyStructure, "position" | "scale" | "factIsFallback"> & {
   position?: [number, number, number];
   scale?: [number, number, number];
 };
@@ -446,6 +453,8 @@ export function createAnatomyData(
       layer: released.layer,
       position: [...released.position] as [number, number, number],
       scale: [1, 1, 1] as [number, number, number],
+      functionIsGeneral: false,
+      factIsFallback: false,
     }];
   });
 
@@ -477,6 +486,8 @@ export function createAnatomyData(
             releasedById.get(structure.parentId)?.name ?? structure.parentId,
           )
         : system;
+      const specificFunction = structure.function ?? AUTHORED_FUNCTIONS[structure.id];
+      const specificFact = structure.fact ?? ancestor?.fact;
       return {
         id: structure.id,
         name,
@@ -491,10 +502,11 @@ export function createAnatomyData(
           (structure.kind === "system"
             ? `${name} structures available in the current atlas.`
             : `${name}, represented as part of ${parentName}.`),
-        function: structure.function ?? ancestor?.function ??
-          `Explore the mapped anatomy of the ${name.toLowerCase()}.`,
-        fact: structure.fact ?? ancestor?.fact ??
-          "This structure retains its own stable atlas identifier and selectable mesh.",
+        function: specificFunction ?? SYSTEM_FUNCTION_ROLES[structure.system] ??
+          FUNCTION_UNAVAILABLE,
+        functionIsGeneral: !specificFunction,
+        fact: specificFact ?? "",
+        factIsFallback: !specificFact,
       };
     });
 

@@ -4,9 +4,9 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Brain,
   CheckCircle2,
   MessageSquare,
+  StickyNote,
   Target,
   Trophy,
 } from "lucide-react";
@@ -22,6 +22,9 @@ import {
   ATLAS_CATALOG_URL,
 } from "../config/atlas";
 import { getProgress, type QuizSession } from "../lib/quiz-api";
+import { listUserNotes, type NoteRow } from "../lib/notes";
+import { parseStickyNoteContent } from "../lib/sticky-note-content";
+import { FormattedNoteText } from "../anatomy-lens/components/ui/StickyNotes";
 import { supabase } from "../lib/supabase";
 
 const AnatomyScene = dynamic(
@@ -89,6 +92,7 @@ export function ProgressDashboard() {
   const [atlases, setAtlases] = useState<readonly VanatomeAtlas[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   const [quizSessions, setQuizSessions] = useState<QuizSession[]>([]);
+  const [savedNotes, setSavedNotes] = useState<NoteRow[]>([]);
   const [progressSummary, setProgressSummary] = useState({
     organs_studied: 0,
     quiz_accuracy: 0,
@@ -109,13 +113,19 @@ export function ProgressDashboard() {
   }, [loader]);
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase) {
+      setProgressState("signed-out");
+      return;
+    }
 
     let active = true;
+    let requestId = 0;
     const loadProgress = async (signedIn: boolean) => {
+      const currentRequest = ++requestId;
       if (!signedIn) {
         if (active) {
           setQuizSessions([]);
+          setSavedNotes([]);
           setProgressSummary({ organs_studied: 0, quiz_accuracy: 0, completed_quizzes: 0 });
           setProgressState("signed-out");
         }
@@ -124,13 +134,18 @@ export function ProgressDashboard() {
 
       setProgressState("loading");
       try {
-        const progress = await getProgress();
-        if (!active) return;
+        const [progress, notes] = await Promise.all([getProgress(), listUserNotes()]);
+        if (!active || currentRequest !== requestId) return;
         setQuizSessions(progress.quiz_sessions);
+        setSavedNotes(notes);
         setProgressSummary(progress.summary);
         setProgressState("signed-in");
       } catch {
-        if (active) setProgressState("error");
+        if (active && currentRequest === requestId) {
+          setSavedNotes([]);
+          setQuizSessions([]);
+          setProgressState("error");
+        }
       }
     };
 
@@ -231,12 +246,32 @@ export function ProgressDashboard() {
         </section>
 
         <section className="progress-session-grid" aria-label="Study session history">
-          <SessionColumn title="Chat sessions" eyebrow="RECENT LEARNING" icon={MessageSquare}>
-            <article className="progress-empty-state">
-              <Brain size={17} />
-              <strong>{progressState === "signed-out" ? "Sign in to view chat history" : "Chat history is not saved yet"}</strong>
-              <span>Chat persistence will be added after media attachments are supported.</span>
-            </article>
+          <SessionColumn title="Sticky notes" eyebrow="SAVED STUDY NOTES" icon={StickyNote}>
+            {progressState === "loading" ? (
+              <article className="progress-empty-state"><span>Loading saved notes…</span></article>
+            ) : progressState === "signed-out" ? (
+              <article className="progress-empty-state"><span>Sign in to view saved notes.</span></article>
+            ) : progressState === "error" ? (
+              <article className="progress-empty-state" role="alert"><span>Unable to load saved notes. Please reload to try again.</span></article>
+            ) : savedNotes.length === 0 ? (
+              <article className="progress-empty-state"><span>No saved notes yet. Add a note to any selected structure.</span></article>
+            ) : (
+              savedNotes.map((note) => {
+                const content = parseStickyNoteContent(note.note);
+                return (
+                  <article className="progress-session-item progress-note-item" key={note.id}>
+                    <div className={`progress-session-item-icon ${content.completed ? "note-complete" : ""}`}>
+                      {content.completed ? <CheckCircle2 size={15} /> : <StickyNote size={15} />}
+                    </div>
+                    <div className="progress-session-item-copy">
+                      <strong>{note.organ}</strong>
+                      <span>{content.completed ? "Completed" : "In progress"} · {formatQuizDate(note.updated_at)}</span>
+                      <p><FormattedNoteText text={content.content} /></p>
+                    </div>
+                  </article>
+                );
+              })
+            )}
           </SessionColumn>
 
           <SessionColumn title="Quiz sessions" eyebrow="KNOWLEDGE CHECKS" icon={Trophy}>
