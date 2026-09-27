@@ -1,0 +1,493 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport, type UIMessage } from "ai";
+import { Brain, Send, Sparkles } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import type { AnatomyStructure } from "../../../data/anatomy";
+import {
+  createChatConversation,
+  getChatConversation,
+  listChatConversations,
+  saveChatMessage,
+} from "../../../lib/chat-api";
+import type { LearningResource } from "../../../lib/learning-resources";
+import { supabase } from "../../../lib/supabase";
+import { LearningResourceCard } from "./LearningResourceCard";
+import { MermaidDiagram } from "./MermaidDiagram";
+
+type ChatStructure = Pick<
+  AnatomyStructure,
+  "id" | "name" | "system" | "layer" | "parentId" | "summary" | "function" | "fact"
+>;
+
+type AIChatPanelProps = {
+  selectedStructure?: AnatomyStructure | null;
+  availableStructures?: AnatomyStructure[];
+  visibleSystems?: readonly string[];
+  mode?: string;
+  onFocusStructure?: (id: string, layer?: string) => boolean;
+};
+
+const QUICK_ACTIONS = [
+  "What does the selected structure do?",
+  "Teach me the heart's left ventricle",
+  "What is located behind the stomach?",
+];
+
+function messageText(message: { parts: Array<{ type: string; text?: string }> }) {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text ?? "")
+    .join("");
+}
+
+function hideMermaidSource(text: string) {
+  return text
+    .replace(/```mermaid\s*[\s\S]*?```/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+type ChatPart = {
+  type: string;
+  text?: string;
+  state?: string;
+  output?: unknown;
+};
+
+type RichMessagePart =
+  | { type: "diagram"; title: string; code: string }
+  | { type: "resources"; resources: LearningResource[] };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function richMessageParts(parts: ChatPart[]): RichMessagePart[] {
+  return parts.flatMap((part) => {
+    if (part.state !== "output-available" || !isRecord(part.output)) return [];
+
+    if (
+      part.type === "tool-createDiagram" &&
+      part.output.type === "diagram" &&
+      part.output.valid === true &&
+      typeof part.output.title === "string" &&
+      typeof part.output.code === "string"
+    ) {
+      return [{ type: "diagram" as const, title: part.output.title, code: part.output.code }];
+    }
+
+    if (
+      part.type === "tool-findLearningResource" &&
+      part.output.type === "learning-resources" &&
+      Array.isArray(part.output.items)
+    ) {
+      const resources = part.output.items.filter((item): item is LearningResource => (
+        isRecord(item) &&
+        (item.type === "image" || item.type === "video") &&
+        typeof item.title === "string" &&
+        typeof item.url === "string" &&
+        typeof item.thumbnailUrl === "string" &&
+        typeof item.source === "string"
+      ));
+      return resources.length ? [{ type: "resources" as const, resources }] : [];
+    }
+
+    return [];
+  });
+}
+
+function InlineMarkdown({ text }: { text: string }) {
+  const parts = text.split(/(!\[[^\]]*\]\(https?:\/\/[^)\s]+\)|\*\*[^*]+\*\*)/g);
+  return (
+    <>
+      {parts.map((part, index) => {
+        const image = part.match(/^!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)$/);
+        if (image) {
+          return (
+            <img
+              key={index}
+              className="chat-inline-image"
+              src={image[2]}
+              alt={image[1]}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          );
+        }
+        return part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={index} className="text-white font-semibold">
+            {part.slice(2, -2)}
+          </strong>
+        ) : (
+          <span key={index}>{part}</span>
+        );
+      })}
+    </>
+  );
+}
+
+function MarkdownText({ text }: { text: string }) {
+  return (
+    <div className="space-y-1.5">
+      {text.split(/\r?\n/).map((line, index) => {
+        const heading = line.match(/^#{1,6}\s+(.+)$/);
+        const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+        const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+
+        if (!line.trim()) return <div key={index} className="h-1" />;
+        if (heading) {
+          return (
+            <h4 key={index} className="text-sm font-semibold text-white mt-2">
+              <InlineMarkdown text={heading[1]} />
+            </h4>
+          );
+        }
+        if (bullet || numbered) {
+          return (
+            <div key={index} className="flex gap-2">
+              <span className="text-cyan-400">{bullet ? "•" : "–"}</span>
+              <span><InlineMarkdown text={(bullet ?? numbered)?.[1] ?? ""} /></span>
+            </div>
+          );
+        }
+        return <p key={index}><InlineMarkdown text={line} /></p>;
+      })}
+    </div>
+  );
+}
+
+function MessageBubble({ message }: { message: { role: string; parts: ChatPart[] } }) {
+  const isAI = message.role === "assistant";
+  const content = isAI ? hideMermaidSource(messageText(message)) : messageText(message);
+  const richParts = richMessageParts(message.parts);
+
+  if (!content && richParts.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      className={`flex gap-2.5 ${isAI ? "" : "flex-row-reverse"}`}
+    >
+      <div
+        className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+          isAI
+            ? "bg-gradient-to-br from-cyan-500 to-blue-600 text-white"
+            : "bg-gradient-to-br from-violet-500 to-purple-600 text-white"
+        }`}
+      >
+        {isAI ? <Brain size={14} /> : "S"}
+      </div>
+      <div
+        className={`max-w-[88%] rounded-xl px-3.5 py-2.5 text-xs leading-relaxed whitespace-pre-wrap ${
+          isAI
+            ? "bg-gray-800/80 border border-white/8 text-gray-200 rounded-tl-sm"
+            : "bg-gradient-to-br from-cyan-600/30 to-blue-600/20 border border-cyan-500/25 text-gray-100 rounded-tr-sm"
+        }`}
+      >
+        {content && <MarkdownText text={content} />}
+        {richParts.map((part, index) => part.type === "diagram" ? (
+          <MermaidDiagram key={`diagram-${index}`} title={part.title} code={part.code} />
+        ) : (
+          <LearningResourceCard key={`resources-${index}`} resources={part.resources} />
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+export function AIChatPanel({
+  selectedStructure = null,
+  availableStructures = [],
+  visibleSystems = [],
+  mode = "chat",
+  onFocusStructure = () => false,
+}: AIChatPanelProps) {
+  const [input, setInput] = useState("");
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const conversationPromiseRef = useRef<Promise<string | null> | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const catalog = useMemo<ChatStructure[]>(
+    () => availableStructures.map(({ id, name, system, layer, parentId, summary, function: structureFunction, fact }) => ({
+      id,
+      name,
+      system,
+      layer,
+      parentId,
+      summary,
+      function: structureFunction,
+      fact,
+    })),
+    [availableStructures],
+  );
+  const selectedContext = useMemo(
+    () => catalog.find((structure) => structure.id === selectedStructure?.id) ?? null,
+    [catalog, selectedStructure?.id],
+  );
+
+  const persistMessage = useCallback(async (
+    currentConversationId: string | null,
+    message: { role: "user" | "assistant" | "system"; content: string; parts: unknown[] },
+  ) => {
+    if (!currentConversationId) return;
+    try {
+      await saveChatMessage(currentConversationId, message);
+    } catch (error) {
+      setPersistenceError(error instanceof Error ? error.message : "Unable to save chat history.");
+    }
+  }, []);
+
+  const { messages, sendMessage, setMessages, status, error } = useChat({
+    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    onFinish: ({ message, isAbort, isDisconnect, isError }) => {
+      for (const part of message.parts) {
+        const toolPart = part as {
+          type?: string;
+          state?: string;
+          output?: { found?: boolean; structureId?: string; layer?: string };
+        };
+        if (
+          toolPart.type === "tool-focusStructure" &&
+          toolPart.state === "output-available" &&
+          toolPart.output?.found &&
+          toolPart.output.structureId
+        ) {
+          onFocusStructure(toolPart.output.structureId, toolPart.output.layer);
+        }
+      }
+      if (!isAbort && !isDisconnect && !isError) {
+        void persistMessage(conversationIdRef.current, {
+          role: "assistant",
+          content: messageText(message),
+          parts: message.parts,
+        });
+      }
+    },
+  });
+  const isThinking = status === "submitted" || status === "streaming";
+
+  const ensureConversation = useCallback(async (title?: string) => {
+    if (conversationId) return conversationId;
+    if (!supabase) return null;
+    if (!conversationPromiseRef.current) {
+      conversationPromiseRef.current = createChatConversation({
+        title: title?.slice(0, 120),
+        selectedStructureId: selectedContext?.id ?? null,
+        selectedStructureName: selectedContext?.name ?? null,
+        mode,
+      })
+        .then((conversation) => {
+          conversationIdRef.current = conversation.id;
+          setConversationId(conversation.id);
+          setPersistenceError(null);
+          return conversation.id;
+        })
+        .catch((reason: unknown) => {
+          setPersistenceError(reason instanceof Error ? reason.message : "Unable to save chat history.");
+          return null;
+        })
+        .finally(() => {
+          conversationPromiseRef.current = null;
+        });
+    }
+    return conversationPromiseRef.current;
+  }, [conversationId, mode, selectedContext]);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    let active = true;
+    const loadLatestConversation = async (signedIn: boolean) => {
+      if (!signedIn) {
+        if (active) {
+          conversationIdRef.current = null;
+          setConversationId(null);
+          setPersistenceError(null);
+          setMessages([]);
+        }
+        return;
+      }
+
+      try {
+        const conversations = await listChatConversations();
+        if (!active) return;
+        const latest = conversations[0];
+        if (!latest) {
+          conversationIdRef.current = null;
+          setConversationId(null);
+          return;
+        }
+        const detail = await getChatConversation(latest.id);
+        if (!active) return;
+        setConversationId(detail.conversation.id);
+        conversationIdRef.current = detail.conversation.id;
+        setMessages(detail.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          parts: message.parts,
+        })) as UIMessage[]);
+        setPersistenceError(null);
+      } catch (reason: unknown) {
+        if (active) {
+          setPersistenceError(reason instanceof Error ? reason.message : "Unable to load chat history.");
+        }
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data }) => {
+      void loadLatestConversation(Boolean(data.session));
+    });
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => void loadLatestConversation(Boolean(session)),
+    );
+
+    return () => {
+      active = false;
+      authSubscription.subscription.unsubscribe();
+    };
+  }, [setMessages]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isThinking]);
+
+  const handleSend = useCallback(async (text?: string) => {
+    const message = (text ?? input).trim();
+    if (!message || isThinking) return;
+
+    setInput("");
+    const currentConversationId = await ensureConversation(message);
+    await persistMessage(currentConversationId, {
+      role: "user",
+      content: message,
+      parts: [{ type: "text", text: message }],
+    });
+    await sendMessage(
+      { text: message },
+      {
+        body: {
+          selectedStructure: selectedContext,
+          visibleSystems,
+          mode,
+          structureCatalog: catalog,
+        },
+      },
+    );
+  }, [catalog, ensureConversation, input, isThinking, mode, persistMessage, selectedContext, sendMessage, visibleSystems]);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex-shrink-0 px-4 py-3 border-b border-white/8 flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+          <Brain size={16} className="text-white" />
+        </div>
+        <div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold text-white">AnatomyAI</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          </div>
+          <p className="text-xs text-gray-500">
+            {persistenceError ? "Chat history unavailable" : "Your anatomy tutor"}
+          </p>
+        </div>
+      </div>
+
+      {selectedContext && (
+        <div className="flex-shrink-0 px-3 py-2 mx-3 mt-2 rounded-lg bg-cyan-500/8 border border-cyan-500/20">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-cyan-400" />
+            <span className="text-xs text-cyan-300 font-medium">{selectedContext.name}</span>
+            <span className="text-xs text-gray-500">selected</span>
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 scrollbar-thin min-h-0">
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full gap-4 py-8">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/20 flex items-center justify-center">
+              <Sparkles size={22} className="text-cyan-400" />
+            </div>
+            <p className="text-gray-500 text-sm text-center px-4">
+              Select a structure or ask me to teach you about any part of the body.
+            </p>
+          </div>
+        )}
+
+        <AnimatePresence>
+          {messages.map((message) => (
+            <MessageBubble key={message.id} message={message} />
+          ))}
+        </AnimatePresence>
+
+        {isThinking && (
+          <div className="flex gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+              <Brain size={14} className="text-white" />
+            </div>
+            <div className="bg-gray-800/80 border border-white/8 rounded-xl rounded-tl-sm px-4 py-3 text-xs text-cyan-300">
+              Thinking about the anatomy...
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg p-2">
+            {error.message || "The anatomy tutor is unavailable right now."}
+          </p>
+        )}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      {messages.length === 0 && (
+        <div className="flex-shrink-0 px-3 pb-2">
+          <p className="text-xs text-gray-600 mb-2 px-1">Try asking</p>
+          <div className="flex flex-wrap gap-1.5">
+            {QUICK_ACTIONS.map((action) => (
+              <button
+                key={action}
+                type="button"
+                onClick={() => void handleSend(action)}
+                className="px-2.5 py-1.5 rounded-full text-xs bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+              >
+                {action}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex-shrink-0 px-3 pb-3 pt-1">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSend();
+          }}
+          className="flex gap-2 items-center bg-gray-800/60 border border-white/10 rounded-xl px-3 py-2 focus-within:border-cyan-500/40 transition-colors"
+        >
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder="Ask your anatomy tutor..."
+            disabled={isThinking}
+            className="flex-1 bg-transparent text-sm text-gray-200 placeholder-gray-600 outline-none min-w-0"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || isThinking}
+            className="w-7 h-7 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:bg-gray-700 disabled:opacity-40 flex items-center justify-center transition-all"
+            aria-label="Send message"
+          >
+            <Send size={13} className="text-white" />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
