@@ -20,6 +20,12 @@ function stringValue(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+function thumbnailValue(value: unknown) {
+  if (typeof value === "string") return value;
+  if (!isRecord(value)) return "";
+  return stringValue(value.static) || stringValue(value.rich);
+}
+
 function videoIdFromUrl(url: string) {
   try {
     const parsed = new URL(url);
@@ -54,7 +60,7 @@ function normalizeVideoResults(results: unknown): LearningResource[] {
     if (!isRecord(value)) return [];
     const url = stringValue(value.link);
     const videoId = stringValue(value.video_id) || videoIdFromUrl(url);
-    const thumbnailUrl = stringValue(value.thumbnail);
+    const thumbnailUrl = thumbnailValue(value.thumbnail);
     if (!url || !videoId || !thumbnailUrl) return [];
     const channel = isRecord(value.channel) ? stringValue(value.channel.name) : "";
     return [{
