@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Play } from "lucide-react";
+import { Play } from "lucide-react";
 import type { LearningResource } from "../../../lib/learning-resources";
 
 type LearningResourceCardProps = {
@@ -19,21 +19,19 @@ export function LearningResourceCard({ resources }: LearningResourceCardProps) {
           key={`${resource.type}-${resource.url}`}
           rel="noreferrer"
           target="_blank"
+          title={resource.title}
+          aria-label={`Open ${resource.type}: ${resource.title}`}
         >
           <div className="chat-resource-thumbnail">
             <img
               src={resource.thumbnailUrl}
-              alt=""
+              alt={resource.title}
               loading="lazy"
               referrerPolicy="no-referrer"
             />
             {resource.type === "video" && (
               <span className="chat-resource-play"><Play size={13} fill="currentColor" /></span>
             )}
-          </div>
-          <div className="chat-resource-copy">
-            <strong>{resource.title}</strong>
-            <span>{resource.source}{resource.duration ? ` · ${resource.duration}` : ""} <ExternalLink size={11} /></span>
           </div>
         </a>
       ))}
