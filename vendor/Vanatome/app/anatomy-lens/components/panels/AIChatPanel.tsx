@@ -3,16 +3,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { Brain, Send, Sparkles } from "lucide-react";
+import { ArrowLeft, Brain, History, Plus, Send, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { AnatomyStructure } from "../../../data/anatomy";
 import {
+  type ChatConversation,
+  type ChatMessage,
   createChatConversation,
   getChatConversation,
   listChatConversations,
   saveChatMessage,
+  updateChatConversation,
 } from "../../../lib/chat-api";
 import type { LearningResource } from "../../../lib/learning-resources";
+import { createSpeechPlayback, requestSpeech } from "../../../lib/speech";
 import { supabase } from "../../../lib/supabase";
 import { LearningResourceCard } from "./LearningResourceCard";
 import { MermaidDiagram } from "./MermaidDiagram";
@@ -35,6 +39,11 @@ const QUICK_ACTIONS = [
   "Teach me the heart's left ventricle",
   "What is located behind the stomach?",
 ];
+
+function chatTitle(message: string) {
+  const title = message.trim().split(/\s+/).slice(0, 8).join(" ");
+  return title.length > 72 ? `${title.slice(0, 69).trimEnd()}...` : title || "New anatomy chat";
+}
 
 function messageText(message: { parts: Array<{ type: string; text?: string }> }) {
   return message.parts
@@ -65,9 +74,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function speechText(text: string) {
+  return hideMermaidSource(text)
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[`*_#]/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function targetFromToolPart(part: unknown) {
+  if (!isRecord(part) || part.type !== "tool-focusStructure" || part.state !== "output-available") {
+    return null;
+  }
+  if (!isRecord(part.output) || part.output.found !== true || typeof part.output.structureId !== "string") {
+    return null;
+  }
+  const structure = isRecord(part.output.structure) ? part.output.structure : null;
+  return {
+    id: part.output.structureId,
+    name: structure && typeof structure.name === "string" ? structure.name : null,
+  };
+}
+
+function targetFromMessages(messages: ChatMessage[]) {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const parts = messages[messageIndex].parts;
+    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const target = targetFromToolPart(parts[partIndex]);
+      if (target) return target;
+    }
+  }
+  return null;
+}
+
 function richMessageParts(parts: ChatPart[]): RichMessagePart[] {
-  return parts.flatMap((part) => {
-    if (part.state !== "output-available" || !isRecord(part.output)) return [];
+  return parts.reduce<RichMessagePart[]>((richParts, part) => {
+    if (part.state !== "output-available" || !isRecord(part.output)) return richParts;
 
     if (
       part.type === "tool-createDiagram" &&
@@ -76,7 +120,8 @@ function richMessageParts(parts: ChatPart[]): RichMessagePart[] {
       typeof part.output.title === "string" &&
       typeof part.output.code === "string"
     ) {
-      return [{ type: "diagram" as const, title: part.output.title, code: part.output.code }];
+      richParts.push({ type: "diagram", title: part.output.title, code: part.output.code });
+      return richParts;
     }
 
     if (
@@ -92,11 +137,11 @@ function richMessageParts(parts: ChatPart[]): RichMessagePart[] {
         typeof item.thumbnailUrl === "string" &&
         typeof item.source === "string"
       ));
-      return resources.length ? [{ type: "resources" as const, resources }] : [];
+      if (resources.length) richParts.push({ type: "resources", resources });
     }
 
-    return [];
-  });
+    return richParts;
+  }, []);
 }
 
 function InlineMarkdown({ text }: { text: string }) {
@@ -159,7 +204,15 @@ function MarkdownText({ text }: { text: string }) {
   );
 }
 
-function MessageBubble({ message }: { message: { role: string; parts: ChatPart[] } }) {
+function MessageBubble({
+  message,
+  onSpeak,
+  speaking,
+}: {
+  message: { role: string; parts: ChatPart[] };
+  onSpeak?: (text: string) => void;
+  speaking?: boolean;
+}) {
   const isAI = message.role === "assistant";
   const content = isAI ? hideMermaidSource(messageText(message)) : messageText(message);
   const richParts = richMessageParts(message.parts);
@@ -194,6 +247,17 @@ function MessageBubble({ message }: { message: { role: string; parts: ChatPart[]
         ) : (
           <LearningResourceCard key={`resources-${index}`} resources={part.resources} />
         ))}
+        {isAI && content && onSpeak && (
+          <button
+            type="button"
+            onClick={() => onSpeak(content)}
+            className="mt-2 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-cyan-400/80 hover:text-cyan-300 transition-colors"
+            aria-label={speaking ? "Stop reading response" : "Read response aloud"}
+          >
+            {speaking ? <VolumeX size={13} /> : <Volume2 size={13} />}
+            {speaking ? "Stop" : "Listen"}
+          </button>
+        )}
       </div>
     </motion.div>
   );
@@ -209,9 +273,22 @@ export function AIChatPanel({
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const conversationPromiseRef = useRef<Promise<string | null> | null>(null);
   const conversationIdRef = useRef<string | null>(null);
+  const onFocusStructureRef = useRef(onFocusStructure);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const stopSpeechRef = useRef<(() => void) | null>(null);
+  const speechRequestRef = useRef(0);
+
+  useEffect(() => {
+    onFocusStructureRef.current = onFocusStructure;
+  }, [onFocusStructure]);
   const catalog = useMemo<ChatStructure[]>(
     () => availableStructures.map(({ id, name, system, layer, parentId, summary, function: structureFunction, fact }) => ({
       id,
@@ -249,7 +326,12 @@ export function AIChatPanel({
         const toolPart = part as {
           type?: string;
           state?: string;
-          output?: { found?: boolean; structureId?: string; layer?: string };
+          output?: {
+            found?: boolean;
+            structureId?: string;
+            layer?: string;
+            structure?: { name?: string };
+          };
         };
         if (
           toolPart.type === "tool-focusStructure" &&
@@ -258,6 +340,16 @@ export function AIChatPanel({
           toolPart.output.structureId
         ) {
           onFocusStructure(toolPart.output.structureId, toolPart.output.layer);
+          const structure = isRecord(toolPart.output.structure) ? toolPart.output.structure : null;
+          const targetOrganName = structure && typeof structure.name === "string" ? structure.name : null;
+          if (conversationIdRef.current) {
+            void updateChatConversation(conversationIdRef.current, {
+              targetOrganId: toolPart.output.structureId,
+              targetOrganName,
+            }).catch((reason: unknown) => {
+              setPersistenceError(reason instanceof Error ? reason.message : "Unable to save chat target.");
+            });
+          }
         }
       }
       if (!isAbort && !isDisconnect && !isError) {
@@ -271,12 +363,76 @@ export function AIChatPanel({
   });
   const isThinking = status === "submitted" || status === "streaming";
 
+  const handleSpeak = useCallback(async (messageId: string, text: string) => {
+    if (speakingMessageId === messageId) {
+      speechRequestRef.current += 1;
+      stopSpeechRef.current?.();
+      stopSpeechRef.current = null;
+      audioRef.current?.pause();
+      audioRef.current = null;
+      setSpeakingMessageId(null);
+      return;
+    }
+
+    const textToSpeak = speechText(text);
+    if (!textToSpeak) return;
+
+    speechRequestRef.current += 1;
+    const requestId = speechRequestRef.current;
+    stopSpeechRef.current?.();
+    stopSpeechRef.current = null;
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setVoiceError(null);
+    setSpeakingMessageId(messageId);
+
+    try {
+      const playback = await createSpeechPlayback(await requestSpeech(textToSpeak));
+      if (requestId !== speechRequestRef.current) {
+        playback.stop();
+        return;
+      }
+
+      const audio = playback.audio;
+      audioRef.current = audio;
+      stopSpeechRef.current = playback.stop;
+      audio.onended = () => {
+        playback.stop();
+        stopSpeechRef.current = null;
+        audioRef.current = null;
+        setSpeakingMessageId(null);
+      };
+      audio.onerror = () => {
+        playback.stop();
+        stopSpeechRef.current = null;
+        audioRef.current = null;
+        setSpeakingMessageId(null);
+        setVoiceError("Unable to play the voice response.");
+      };
+      await audio.play();
+    } catch (reason: unknown) {
+      if (requestId !== speechRequestRef.current) return;
+      setSpeakingMessageId(null);
+      setVoiceError(reason instanceof Error ? reason.message : "Unable to generate the voice response.");
+    }
+  }, [speakingMessageId]);
+
+  useEffect(() => () => {
+    speechRequestRef.current += 1;
+    stopSpeechRef.current?.();
+    audioRef.current?.pause();
+    audioRef.current = null;
+    stopSpeechRef.current = null;
+  }, []);
+
   const ensureConversation = useCallback(async (title?: string) => {
     if (conversationId) return conversationId;
     if (!supabase) return null;
     if (!conversationPromiseRef.current) {
       conversationPromiseRef.current = createChatConversation({
-        title: title?.slice(0, 120),
+        title: title ? chatTitle(title) : undefined,
+        targetOrganId: selectedContext?.id ?? null,
+        targetOrganName: selectedContext?.name ?? null,
         selectedStructureId: selectedContext?.id ?? null,
         selectedStructureName: selectedContext?.name ?? null,
         mode,
@@ -298,6 +454,63 @@ export function AIChatPanel({
     return conversationPromiseRef.current;
   }, [conversationId, mode, selectedContext]);
 
+  const loadConversations = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      setConversations(await listChatConversations());
+      setPersistenceError(null);
+    } catch (reason: unknown) {
+      setPersistenceError(reason instanceof Error ? reason.message : "Unable to load chat history.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const openConversation = useCallback(async (id: string) => {
+    setHistoryLoading(true);
+    try {
+      const detail = await getChatConversation(id);
+      conversationIdRef.current = detail.conversation.id;
+      setConversationId(detail.conversation.id);
+      setMessages(detail.messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        parts: message.parts,
+      })) as UIMessage[]);
+      const recoveredTarget = targetFromMessages(detail.messages);
+      const target = detail.conversation.target_organ_id
+        ? { id: detail.conversation.target_organ_id, name: detail.conversation.target_organ_name }
+        : recoveredTarget ?? (detail.conversation.selected_structure_id
+          ? { id: detail.conversation.selected_structure_id, name: detail.conversation.selected_structure_name }
+          : null);
+      if (target) {
+        onFocusStructureRef.current(target.id);
+        if (!detail.conversation.target_organ_id && recoveredTarget) {
+          void updateChatConversation(detail.conversation.id, {
+            targetOrganId: recoveredTarget.id,
+            targetOrganName: recoveredTarget.name,
+          }).catch((reason: unknown) => {
+            setPersistenceError(reason instanceof Error ? reason.message : "Unable to save chat target.");
+          });
+        }
+      }
+      setHistoryOpen(false);
+      setPersistenceError(null);
+    } catch (reason: unknown) {
+      setPersistenceError(reason instanceof Error ? reason.message : "Unable to open chat history.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [setMessages]);
+
+  const startNewConversation = useCallback(() => {
+    conversationIdRef.current = null;
+    setConversationId(null);
+    setMessages([]);
+    setPersistenceError(null);
+    setHistoryOpen(false);
+  }, [setMessages]);
+
   useEffect(() => {
     if (!supabase) return;
 
@@ -309,6 +522,7 @@ export function AIChatPanel({
           setConversationId(null);
           setPersistenceError(null);
           setMessages([]);
+          setConversations([]);
         }
         return;
       }
@@ -316,6 +530,7 @@ export function AIChatPanel({
       try {
         const conversations = await listChatConversations();
         if (!active) return;
+        setConversations(conversations);
         const latest = conversations[0];
         if (!latest) {
           conversationIdRef.current = null;
@@ -331,6 +546,23 @@ export function AIChatPanel({
           role: message.role,
           parts: message.parts,
         })) as UIMessage[]);
+        const recoveredTarget = targetFromMessages(detail.messages);
+        const target = detail.conversation.target_organ_id
+          ? { id: detail.conversation.target_organ_id, name: detail.conversation.target_organ_name }
+          : recoveredTarget ?? (detail.conversation.selected_structure_id
+            ? { id: detail.conversation.selected_structure_id, name: detail.conversation.selected_structure_name }
+            : null);
+        if (target) {
+          onFocusStructureRef.current(target.id);
+          if (!detail.conversation.target_organ_id && recoveredTarget) {
+            void updateChatConversation(detail.conversation.id, {
+              targetOrganId: recoveredTarget.id,
+              targetOrganName: recoveredTarget.name,
+            }).catch((reason: unknown) => {
+              setPersistenceError(reason instanceof Error ? reason.message : "Unable to save chat target.");
+            });
+          }
+        }
         setPersistenceError(null);
       } catch (reason: unknown) {
         if (active) {
@@ -395,7 +627,81 @@ export function AIChatPanel({
             {persistenceError ? "Chat history unavailable" : "Your anatomy tutor"}
           </p>
         </div>
+        <div className="ml-auto flex items-center gap-1">
+          {historyOpen && (
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(false)}
+              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/8 transition-colors"
+              aria-label="Back to chat"
+              title="Back to chat"
+            >
+              <ArrowLeft size={15} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setHistoryOpen(true);
+              void loadConversations();
+            }}
+            className="p-2 rounded-lg text-gray-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition-colors"
+            aria-label="Open chat history"
+            title="Chat history"
+          >
+            <History size={15} />
+          </button>
+        </div>
       </div>
+
+      {historyOpen ? (
+        <div className="flex-1 overflow-y-auto px-3 py-3 scrollbar-thin">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-400/70">Saved sessions</p>
+              <h3 className="text-sm font-semibold text-white mt-1">Chat history</h3>
+            </div>
+            <button
+              type="button"
+              onClick={startNewConversation}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-cyan-500/15 border border-cyan-500/25 text-cyan-300 hover:bg-cyan-500/25 transition-colors"
+            >
+              <Plus size={13} />
+              New chat
+            </button>
+          </div>
+
+          {historyLoading ? (
+            <p className="text-xs text-gray-500 py-6 text-center">Loading chat history...</p>
+          ) : conversations.length === 0 ? (
+            <div className="rounded-xl border border-white/8 bg-gray-800/40 px-4 py-6 text-center">
+              <History size={20} className="mx-auto text-gray-600 mb-2" />
+              <p className="text-xs text-gray-500">No saved chat sessions yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {conversations.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => void openConversation(conversation.id)}
+                  className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                    conversation.id === conversationId
+                      ? "border-cyan-500/35 bg-cyan-500/10"
+                      : "border-white/8 bg-gray-800/35 hover:border-cyan-500/25 hover:bg-gray-800/70"
+                  }`}
+                >
+                  <span className="block text-xs font-medium text-gray-200 truncate">{conversation.title}</span>
+                  <span className="block text-[10px] text-gray-500 mt-1">
+                    {new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(conversation.updated_at))}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
 
       {selectedContext && (
         <div className="flex-shrink-0 px-3 py-2 mx-3 mt-2 rounded-lg bg-cyan-500/8 border border-cyan-500/20">
@@ -421,7 +727,12 @@ export function AIChatPanel({
 
         <AnimatePresence>
           {messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+            <MessageBubble
+              key={message.id}
+              message={message}
+              onSpeak={message.role === "assistant" ? (text) => void handleSpeak(message.id, text) : undefined}
+              speaking={speakingMessageId === message.id}
+            />
           ))}
         </AnimatePresence>
 
@@ -439,6 +750,12 @@ export function AIChatPanel({
         {error && (
           <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg p-2">
             {error.message || "The anatomy tutor is unavailable right now."}
+          </p>
+        )}
+
+        {voiceError && (
+          <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+            {voiceError}
           </p>
         )}
 
@@ -488,6 +805,8 @@ export function AIChatPanel({
           </button>
         </form>
       </div>
+        </>
+      )}
     </div>
   );
 }

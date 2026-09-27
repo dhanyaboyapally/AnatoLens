@@ -4,6 +4,8 @@ export type ChatConversation = {
   id: string;
   user_id: string;
   title: string;
+  target_organ_id: string | null;
+  target_organ_name: string | null;
   selected_structure_id: string | null;
   selected_structure_name: string | null;
   mode: string;
@@ -58,6 +60,8 @@ export function listChatConversations(): Promise<ChatConversation[]> {
 
 export function createChatConversation(input?: {
   title?: string;
+  targetOrganId?: string | null;
+  targetOrganName?: string | null;
   selectedStructureId?: string | null;
   selectedStructureName?: string | null;
   mode?: string;
@@ -70,6 +74,16 @@ export function createChatConversation(input?: {
 
 export function getChatConversation(id: string): Promise<ChatConversationDetail> {
   return chatApiRequest(`/api/chat/conversations/${encodeURIComponent(id)}`);
+}
+
+export function updateChatConversation(
+  id: string,
+  input: { targetOrganId: string; targetOrganName?: string | null },
+): Promise<ChatConversation> {
+  return chatApiRequest(`/api/chat/conversations/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
 }
 
 export function saveChatMessage(

@@ -61,6 +61,7 @@ export type VanatomeViewerError = {
 };
 export type VanatomeViewerAppearance = {
     bodyShellId?: string | null;
+    bodyShellOpacity?: number;
     skeletonId?: string | null;
     defaultOpacity?: number;
     xrayOpacity?: number;
@@ -82,6 +83,8 @@ type VanatomeViewerBaseProps = {
     displayMode?: VanatomeDisplayMode;
     systemColors?: Readonly<Record<string, string>>;
     focusRequestKey?: string | number;
+    /** Keep selection highlighting without automatically moving the camera. */
+    focusOnSelection?: boolean;
     resetViewKey?: string | number;
     onSelect?: (id: string | null) => void;
     onHover?: (id: string | null) => void;

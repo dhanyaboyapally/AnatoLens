@@ -4,10 +4,9 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   ArrowLeft,
+  Brain,
   CheckCircle2,
   MessageSquare,
-  StickyNote,
-  Target,
   Trophy,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -22,9 +21,7 @@ import {
   ATLAS_CATALOG_URL,
 } from "../config/atlas";
 import { getProgress, type QuizSession } from "../lib/quiz-api";
-import { listUserNotes, type NoteRow } from "../lib/notes";
-import { parseStickyNoteContent } from "../lib/sticky-note-content";
-import { FormattedNoteText } from "../anatomy-lens/components/ui/StickyNotes";
+import type { ChatConversation } from "../lib/chat-api";
 import { supabase } from "../lib/supabase";
 
 const AnatomyScene = dynamic(
@@ -47,6 +44,13 @@ function formatQuizDate(value: string) {
   }).format(new Date(value));
 }
 
+function formatChatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(value));
+}
+
 function quizStatus(session: QuizSession) {
   const accuracy = session.total_questions
     ? session.score / session.total_questions
@@ -54,6 +58,56 @@ function quizStatus(session: QuizSession) {
   if (accuracy === 1) return "Strong result";
   if (accuracy < 0.6) return "Keep practicing";
   return "Review one topic";
+}
+
+function getActivityVisibleIds(
+  atlases: readonly VanatomeAtlas[],
+  quizSessions: readonly QuizSession[],
+  chatConversations: readonly ChatConversation[],
+) {
+  const structures = atlases.flatMap((atlas) => atlas.structures);
+  const structureIds = new Set(structures.map((structure) => structure.id));
+  const activityRoots = new Set([
+    ...quizSessions.map((session) => session.organ_id),
+    ...chatConversations.flatMap((conversation) => [
+      conversation.target_organ_id,
+      conversation.selected_structure_id,
+    ]),
+  ].filter((id): id is string => id !== null && structureIds.has(id)));
+  const childrenByParent = new Map<string, string[]>();
+  const parentById = new Map<string, string>();
+
+  for (const structure of structures) {
+    if (!structure.parentId) continue;
+    parentById.set(structure.id, structure.parentId);
+    const children = childrenByParent.get(structure.parentId) ?? [];
+    children.push(structure.id);
+    childrenByParent.set(structure.parentId, children);
+  }
+
+  const visibleIds = new Set(activityRoots);
+  const pending = [...activityRoots];
+  while (pending.length > 0) {
+    const id = pending.pop();
+    if (!id) continue;
+    for (const childId of childrenByParent.get(id) ?? []) {
+      if (visibleIds.has(childId)) continue;
+      visibleIds.add(childId);
+      pending.push(childId);
+    }
+  }
+  for (const rootId of activityRoots) {
+    let parentId = parentById.get(rootId);
+    while (parentId) {
+      if (visibleIds.has(parentId)) break;
+      visibleIds.add(parentId);
+      parentId = parentById.get(parentId);
+    }
+  }
+
+  return structures
+    .filter((structure) => structure.id !== "body-shell" && !visibleIds.has(structure.id))
+    .map((structure) => structure.id);
 }
 
 function SessionColumn({
@@ -92,7 +146,7 @@ export function ProgressDashboard() {
   const [atlases, setAtlases] = useState<readonly VanatomeAtlas[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   const [quizSessions, setQuizSessions] = useState<QuizSession[]>([]);
-  const [savedNotes, setSavedNotes] = useState<NoteRow[]>([]);
+  const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
   const [progressSummary, setProgressSummary] = useState({
     organs_studied: 0,
     quiz_accuracy: 0,
@@ -113,19 +167,14 @@ export function ProgressDashboard() {
   }, [loader]);
 
   useEffect(() => {
-    if (!supabase) {
-      setProgressState("signed-out");
-      return;
-    }
+    if (!supabase) return;
 
     let active = true;
-    let requestId = 0;
     const loadProgress = async (signedIn: boolean) => {
-      const currentRequest = ++requestId;
       if (!signedIn) {
         if (active) {
           setQuizSessions([]);
-          setSavedNotes([]);
+          setChatConversations([]);
           setProgressSummary({ organs_studied: 0, quiz_accuracy: 0, completed_quizzes: 0 });
           setProgressState("signed-out");
         }
@@ -134,18 +183,14 @@ export function ProgressDashboard() {
 
       setProgressState("loading");
       try {
-        const [progress, notes] = await Promise.all([getProgress(), listUserNotes()]);
-        if (!active || currentRequest !== requestId) return;
+        const progress = await getProgress();
+        if (!active) return;
         setQuizSessions(progress.quiz_sessions);
-        setSavedNotes(notes);
+        setChatConversations(progress.chat_conversations);
         setProgressSummary(progress.summary);
         setProgressState("signed-in");
       } catch {
-        if (active && currentRequest === requestId) {
-          setSavedNotes([]);
-          setQuizSessions([]);
-          setProgressState("error");
-        }
+        if (active) setProgressState("error");
       }
     };
 
@@ -167,17 +212,34 @@ export function ProgressDashboard() {
     [atlases],
   );
   const highlightedOrganId = useMemo(() => {
-    const latestOrganId = quizSessions[0]?.organ_id;
+    const latestQuiz = quizSessions[0];
+    const latestChat = chatConversations[0];
+    const latestOrganId = latestChat && (!latestQuiz || new Date(latestChat.updated_at) > new Date(latestQuiz.created_at))
+      ? latestChat.target_organ_id ?? latestChat.selected_structure_id
+      : latestQuiz?.organ_id;
     if (!latestOrganId) return null;
     return atlases.some((atlas) =>
       atlas.structures.some((structure) => structure.id === latestOrganId),
     )
       ? latestOrganId
       : null;
-  }, [atlases, quizSessions]);
+  }, [atlases, chatConversations, quizSessions]);
+  const latestActivity = useMemo(() => {
+    const latestQuiz = quizSessions[0];
+    const latestChat = chatConversations[0];
+    return latestChat && (!latestQuiz || new Date(latestChat.updated_at) > new Date(latestQuiz.created_at))
+      ? "chat"
+      : "quiz";
+  }, [chatConversations, quizSessions]);
   const highlightedOrganName = highlightedOrganId
-    ? atlases.flatMap((atlas) => atlas.structures).find((structure) => structure.id === highlightedOrganId)?.name
+    ? latestActivity === "chat" && chatConversations[0]?.target_organ_id === highlightedOrganId && chatConversations[0].target_organ_name
+      ? chatConversations[0].target_organ_name
+      : atlases.flatMap((atlas) => atlas.structures).find((structure) => structure.id === highlightedOrganId)?.name
     : null;
+  const hiddenProgressStructureIds = useMemo(
+    () => getActivityVisibleIds(atlases, quizSessions, chatConversations),
+    [atlases, chatConversations, quizSessions],
+  );
 
   return (
     <main className="progress-page-shell">
@@ -220,7 +282,6 @@ export function ProgressDashboard() {
               <span className="progress-eyebrow">ANATOMY COVERAGE</span>
               <h2>Explore your studied regions</h2>
             </div>
-            <span className="progress-model-badge"><Target size={13} /> PLACEHOLDER VIEW</span>
           </div>
           <div className="progress-model-stage">
             {modelError ? (
@@ -233,44 +294,40 @@ export function ProgressDashboard() {
                 visibleLayers={visibleLayers}
                 focusRequestKey={0}
                 resetViewKey={0}
+                interactive={false}
+                focusOnSelection={false}
+                hiddenIds={hiddenProgressStructureIds}
                 onSelect={() => undefined}
                 onStructureContextMenu={() => undefined}
                 onEscape={() => undefined}
               />
             ) : null}
             <div className="progress-model-overlay">
-              <span>{highlightedOrganName ? "LATEST QUIZ ACTIVITY" : "FULL-BODY ATLAS"}</span>
+              <span>{highlightedOrganName ? `LATEST ${latestActivity.toUpperCase()} ACTIVITY` : "FULL-BODY ATLAS"}</span>
               <strong>{highlightedOrganName ?? `${progressSummary.organs_studied} regions visited`}</strong>
             </div>
           </div>
         </section>
 
         <section className="progress-session-grid" aria-label="Study session history">
-          <SessionColumn title="Sticky notes" eyebrow="SAVED STUDY NOTES" icon={StickyNote}>
+          <SessionColumn title="Chat sessions" eyebrow="RECENT LEARNING" icon={MessageSquare}>
             {progressState === "loading" ? (
-              <article className="progress-empty-state"><span>Loading saved notes…</span></article>
+              <article className="progress-empty-state"><span>Loading saved chat sessions…</span></article>
             ) : progressState === "signed-out" ? (
-              <article className="progress-empty-state"><span>Sign in to view saved notes.</span></article>
-            ) : progressState === "error" ? (
-              <article className="progress-empty-state" role="alert"><span>Unable to load saved notes. Please reload to try again.</span></article>
-            ) : savedNotes.length === 0 ? (
-              <article className="progress-empty-state"><span>No saved notes yet. Add a note to any selected structure.</span></article>
+              <article className="progress-empty-state"><span>Sign in to view chat history.</span></article>
+            ) : chatConversations.length === 0 ? (
+              <article className="progress-empty-state"><Brain size={17} /><span>No saved chat sessions yet.</span></article>
             ) : (
-              savedNotes.map((note) => {
-                const content = parseStickyNoteContent(note.note);
-                return (
-                  <article className="progress-session-item progress-note-item" key={note.id}>
-                    <div className={`progress-session-item-icon ${content.completed ? "note-complete" : ""}`}>
-                      {content.completed ? <CheckCircle2 size={15} /> : <StickyNote size={15} />}
-                    </div>
-                    <div className="progress-session-item-copy">
-                      <strong>{note.organ}</strong>
-                      <span>{content.completed ? "Completed" : "In progress"} · {formatQuizDate(note.updated_at)}</span>
-                      <p><FormattedNoteText text={content.content} /></p>
-                    </div>
-                  </article>
-                );
-              })
+              chatConversations.map((conversation) => (
+                <article className="progress-session-item" key={conversation.id}>
+                  <div className="progress-session-item-icon"><MessageSquare size={15} /></div>
+                  <div className="progress-session-item-copy">
+                    <strong>{conversation.title}</strong>
+                    <span>{conversation.target_organ_name ?? conversation.selected_structure_name ?? "General anatomy"}</span>
+                  </div>
+                  <div className="progress-session-meta"><span>{formatChatDate(conversation.updated_at)}</span></div>
+                </article>
+              ))
             )}
           </SessionColumn>
 

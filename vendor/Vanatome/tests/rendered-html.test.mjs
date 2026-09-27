@@ -22,15 +22,22 @@ async function render(pathname = "/") {
   );
 }
 
-test("server-renders the auth session-check shell", async () => {
+test("server-renders the atlas loading shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>AnatomyLens \/\/ Human Anatomy Explorer<\/title>/i);
-  assert.match(html, /ANATOMY LENS ACCOUNT/);
-  assert.match(html, /Checking your session/);
-  assert.doesNotMatch(html, /class="workspace/);
+  assert.match(html, /<title>Vanatome \/\/ Human Anatomy Explorer<\/title>/i);
+  assert.match(html, /Vanatome/);
+  assert.match(html, /ATLAS CONNECTING/);
+  assert.match(html, /CURATED FULL-BODY RELEASE/);
+  assert.match(html, /Loading atlas catalog/);
+  assert.match(html, /versioned catalog and validated anatomy metadata/i);
+  assert.match(html, /OPEN MODEL ATTRIBUTION/);
+  assert.match(
+    html,
+    /href="https:\/\/atlas\.vanatome\.vixotic\.in\/ATTRIBUTION\.txt"/,
+  );
   assert.doesNotMatch(html, /react-loading-skeleton/i);
 });
