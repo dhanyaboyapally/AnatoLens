@@ -8,8 +8,19 @@ import type {
   AnatomyStructure as AtlasStructure,
   LoadedAtlasBundle,
 } from "@vixotic/vanatome-atlas";
+import {
+  AUTHORED_FUNCTIONS,
+  FUNCTION_SOURCES,
+  FUNCTION_UNAVAILABLE,
+  SYSTEM_FUNCTION_ROLES,
+} from "./anatomy-functions";
 
 export type AnatomyRegion = "head" | "thorax" | "abdomen" | "pelvis";
+
+export type AnatomyReference = {
+  title: string;
+  url: string;
+};
 
 export type AnatomyStructure = VanatomeStructure & {
   region?: AnatomyRegion;
@@ -18,6 +29,7 @@ export type AnatomyStructure = VanatomeStructure & {
   summary: NonNullable<VanatomeStructure["summary"]>;
   function: NonNullable<VanatomeStructure["function"]>;
   fact: NonNullable<VanatomeStructure["fact"]>;
+  sources?: readonly AnatomyReference[];
 };
 
 type CuratedStructure = Omit<AnatomyStructure, "position" | "scale"> & {
@@ -425,6 +437,44 @@ const layerDefinitions = [
   { id: "regional-anatomy", label: "Body shell" },
 ] as const;
 
+const sourcedStructureDetails: Record<
+  string,
+  Pick<AnatomyStructure, "summary" | "fact" | "sources">
+> = {
+  "external-abdominal-obliques-external-abdominal-oblique-muscle-left": {
+    summary: "A superficial muscle of the left anterolateral abdominal wall, with fibers descending inferomedially from the lower ribs.",
+    fact: "Its aponeurosis contributes to the linea alba. Research also describes the external oblique's contribution to trunk twisting moments and its anatomical relationship with the posterior thoracolumbar fascia.",
+    sources: [
+      {
+        title: "Flynn & Vickerton, Abdominal Wall Anatomy (StatPearls, NCBI Bookshelf)",
+        url: "https://www.ncbi.nlm.nih.gov/books/NBK551649/",
+      },
+      {
+        title: "Lee et al. (2010), Oblique abdominal muscle activity (Journal of Biomechanics, PubMed)",
+        url: "https://pubmed.ncbi.nlm.nih.gov/20170918/",
+      },
+      {
+        title: "Fan et al. (2018), External oblique and thoracolumbar fascia (Clinical Anatomy)",
+        url: "https://doi.org/10.1002/ca.23248",
+      },
+    ],
+  },
+  "deltoid-muscles-clavicular-part-of-deltoid-muscle-left": {
+    summary: "The anterior (clavicular) portion of the deltoid over the left shoulder, arising from the lateral third of the clavicle.",
+    fact: "This deltoid portion inserts on the deltoid tuberosity of the humerus. The atlas maps the left clavicular part as its own selectable structure; EMG research has measured deltoid recruitment during shoulder-flexion tasks.",
+    sources: [
+      {
+        title: "Anatomy, Shoulder and Upper Limb: Deltoid Muscle (StatPearls, NCBI Bookshelf)",
+        url: "https://www.ncbi.nlm.nih.gov/books/NBK537056/",
+      },
+      {
+        title: "Ju & Yoo (2015), Deltoid EMG during shoulder flexion (Journal of Physical Therapy Science, PMC)",
+        url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC4668185/",
+      },
+    ],
+  },
+};
+
 export function createAnatomyData(
   bundles: readonly LoadedAtlasBundle[],
 ): AnatomyData {
@@ -477,6 +527,17 @@ export function createAnatomyData(
             releasedById.get(structure.parentId)?.name ?? structure.parentId,
           )
         : system;
+      const sourcedDetails = sourcedStructureDetails[structure.id];
+      const functionSources = (FUNCTION_SOURCES[structure.id] ?? []).map(
+        ({ label, href }) => ({ title: label, url: href }),
+      );
+      const sources = [
+        ...(sourcedDetails?.sources ?? []),
+        ...functionSources,
+      ].filter((source, index, allSources) =>
+        allSources.findIndex((candidate) => candidate.url === source.url) === index,
+      );
+      const systemRole = SYSTEM_FUNCTION_ROLES[structure.system];
       return {
         id: structure.id,
         name,
@@ -487,14 +548,18 @@ export function createAnatomyData(
           SYSTEM_COLORS[structure.system] ?? "#00d4ff",
         position: [...structure.position] as [number, number, number],
         scale: [1, 1, 1],
-        summary: structure.summary ??
+        summary: sourcedDetails?.summary ?? structure.summary ??
           (structure.kind === "system"
             ? `${name} structures available in the current atlas.`
             : `${name}, represented as part of ${parentName}.`),
-        function: structure.function ?? ancestor?.function ??
-          `Explore the mapped anatomy of the ${name.toLowerCase()}.`,
-        fact: structure.fact ?? ancestor?.fact ??
-          "This structure retains its own stable atlas identifier and selectable mesh.",
+        function: AUTHORED_FUNCTIONS[structure.id] ??
+          structure.function ??
+          (systemRole
+            ? `${name}: ${systemRole}. ${FUNCTION_UNAVAILABLE}`
+            : FUNCTION_UNAVAILABLE),
+        fact: sourcedDetails?.fact ?? structure.fact ??
+          `${name} is mapped as ${structure.kind ?? "a selectable structure"} under ${parentName} in the ${system} system. This describes atlas placement, not a verified physiological fact.`,
+        sources: sources.length > 0 ? sources : undefined,
       };
     });
 

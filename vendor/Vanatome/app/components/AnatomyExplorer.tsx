@@ -25,7 +25,6 @@ import {
   UserRound,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AtlasLoaderError,
@@ -56,6 +55,7 @@ import { AIChatPanel } from "../anatomy-lens/components/panels/AIChatPanel";
 import { StickyNotesLayer } from "../anatomy-lens/components/ui/StickyNotes";
 import { QuizPanel } from "./QuizPanel";
 import { AuthDialog } from "./AuthDialog";
+import { ThemeToggle } from "./ThemeToggle";
 import { supabase } from "../lib/supabase";
 
 type MobileNavigationPanel = "browse" | "systems" | null;
@@ -286,7 +286,6 @@ function LoadedAnatomyExplorer({
     mode?: SystemLoadMode,
   ) => void;
 }) {
-  const router = useRouter();
   const anatomy = useMemo<AnatomyData>(
     () => createAnatomyData(bundles),
     [bundles],
@@ -592,6 +591,7 @@ function LoadedAnatomyExplorer({
           <StickyNotesLayer
             selectedStructure={selected}
             userId={authUser?.id ?? null}
+            structures={anatomyRegistry}
           />
         </div>
 
@@ -605,15 +605,13 @@ function LoadedAnatomyExplorer({
         </div>
 
         <div className="topbar-actions">
+          <ThemeToggle />
           <button
             className="icon-button account-button"
             type="button"
-            onClick={() => {
-              if (authUser) router.push("/progress");
-              else setAuthOpen(true);
-            }}
-            aria-label={authUser ? "Open learning progress" : "Sign in or create an account"}
-            title={authUser ? "Open learning progress" : "Sign in or create an account"}
+            onClick={() => setAuthOpen(true)}
+            aria-label={authUser ? "Open account options" : "Sign in or create an account"}
+            title={authUser ? "Open account options" : "Sign in or create an account"}
           >
             <UserRound size={18} />
           </button>
@@ -984,9 +982,20 @@ function LoadedAnatomyExplorer({
                 </div>
 
                 <div className="data-block fact-block">
-                  <span className="data-label">SYSTEM NOTE</span>
+                  <span className="data-label">ATLAS NOTE</span>
                   <p>{selected.fact}</p>
                 </div>
+
+                {selected.sources && selected.sources.length > 0 && (
+                  <div className="data-sources" aria-label="Anatomy references">
+                    <span className="data-label">REFERENCES</span>
+                    {selected.sources.map((source) => (
+                      <a key={source.url} href={source.url} target="_blank" rel="noreferrer">
+                        {source.title}
+                      </a>
+                    ))}
+                  </div>
+                )}
 
                 <div className="panel-meter">
                   <div className="meter-copy">

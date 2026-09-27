@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { LogIn, LogOut, UserRound, X } from "lucide-react";
+import Link from "next/link";
+import { BarChart3, LogIn, LogOut, UserRound, X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 
@@ -33,24 +34,41 @@ export function AuthDialog({ open, user, onClose }: AuthDialogProps) {
       return;
     }
 
-    const result = mode === "sign-in"
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password });
+    try {
+      const result = mode === "sign-in"
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({ email, password });
 
-    if (result.error) {
-      setError(result.error.message);
-    } else if (mode === "sign-up") {
-      setMessage("Account created. Check your email if confirmation is enabled.");
-    } else {
-      onClose();
+      if (result.error) {
+        setError(result.error.message);
+      } else if (mode === "sign-up") {
+        setMessage("Account created. Check your email if confirmation is enabled.");
+      } else {
+        onClose();
+      }
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Unable to contact the sign-in service.");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   const signOut = async () => {
     if (!supabase) return;
-    await supabase.auth.signOut();
-    onClose();
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        setError(signOutError.message);
+        return;
+      }
+      onClose();
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Unable to sign out.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -68,7 +86,9 @@ export function AuthDialog({ open, user, onClose }: AuthDialogProps) {
           <div className="auth-account-content">
             <UserRound size={28} />
             <p>{user.email}</p>
-            <button type="button" className="auth-submit" onClick={signOut}><LogOut size={14} /> SIGN OUT</button>
+            {error && <p className="auth-error" role="alert">{error}</p>}
+            <Link href="/progress" className="auth-submit" onClick={onClose}><BarChart3 size={14} /> LEARNING PROGRESS</Link>
+            <button type="button" className="auth-submit" onClick={signOut} disabled={busy}><LogOut size={14} /> {busy ? "SIGNING OUT…" : "SIGN OUT"}</button>
           </div>
         ) : (
           <form onSubmit={submit} className="auth-form">

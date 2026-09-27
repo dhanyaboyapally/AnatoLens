@@ -1,4 +1,8 @@
 export const AUTHORED_FUNCTIONS: Readonly<Record<string, string>> = {
+  "external-abdominal-obliques-external-abdominal-oblique-muscle-left":
+    "Working with the paired abdominal muscles, it helps flex and rotate the trunk and compress abdominal contents. Unilateral contraction of the left external oblique contributes to rightward trunk rotation and left lateral flexion.",
+  "deltoid-muscles-clavicular-part-of-deltoid-muscle-left":
+    "The anterior (clavicular) portion of the deltoid contributes to shoulder flexion, horizontal adduction, and medial rotation of the arm.",
   "neck-muscles-external-part-of-thyro-arytenoid-muscle-right":
     "During phonation, thyroarytenoid activation shortens the vocal folds and contributes to slight vocal-fold adduction. Its effect on pitch depends on activation of other laryngeal muscles, especially the cricothyroid.",
 };
@@ -23,20 +27,20 @@ export const FUNCTION_SOURCES: Readonly<Record<string, ReadonlyArray<{
 };
 
 export const FUNCTION_UNAVAILABLE =
-  "Function information has not yet been added for this structure.";
+  "A structure-specific function has not yet been verified for this atlas entry.";
 
 export const SYSTEM_FUNCTION_ROLES: Readonly<Record<string, string>> = {
-  cardiovascular: "This structure contributes to moving blood, delivering oxygen and nutrients, or returning blood through the cardiovascular system. Its specific role depends on the structure.",
-  digestive: "This structure contributes to processing food, absorbing nutrients, or moving digestive contents through the digestive system. Its specific role depends on the structure.",
-  endocrine: "This structure contributes to hormone production, release, or regulation within the endocrine system. Its specific role depends on the structure.",
-  lymphatic: "This structure contributes to immune defense or the collection and return of tissue fluid within the lymphatic system. Its specific role depends on the structure.",
-  muscular: "This structure contributes to producing or controlling movement, maintaining posture, or stabilizing a body region. Its specific action has not been verified for this structure.",
-  nervous: "This structure contributes to receiving, processing, or transmitting information within the nervous system. Its specific role depends on the structure.",
-  reproductive: "This structure contributes to reproductive processes, including gamete production, hormone signaling, or support of reproduction. Its specific role depends on the structure.",
-  respiratory: "This structure contributes to conducting air or exchanging gases within the respiratory system. Its specific role depends on the structure.",
-  skeletal: "This structure contributes to support, protection, movement leverage, or mineral storage within the skeletal system. Its specific role depends on the structure.",
-  urinary: "This structure contributes to filtering blood, regulating fluid balance, or forming and eliminating urine within the urinary system. Its specific role depends on the structure.",
-  "regional-anatomy": "This is a mapped regional anatomy structure; a physiological function is not assigned at this category level.",
+  cardiovascular: "system-level context: circulation of blood, oxygen, and nutrients",
+  digestive: "system-level context: processing food, absorbing nutrients, and moving digestive contents",
+  endocrine: "system-level context: hormone production, release, and regulation",
+  lymphatic: "system-level context: immune defense and tissue-fluid return",
+  muscular: "system-level context: movement, posture, and stabilization",
+  nervous: "system-level context: receiving, processing, and transmitting information",
+  reproductive: "system-level context: reproduction and related hormone signaling",
+  respiratory: "system-level context: air conduction and gas exchange",
+  skeletal: "system-level context: support, protection, leverage, and mineral storage",
+  urinary: "system-level context: blood filtration and fluid balance",
+  "regional-anatomy": "regional atlas entry; a physiological function is not assigned at this category level",
 };
 
 export const GENERAL_ROLE_NOTE =

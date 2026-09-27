@@ -7,6 +7,7 @@ import {
   Brain,
   CheckCircle2,
   MessageSquare,
+  StickyNote,
   Trophy,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -22,7 +23,10 @@ import {
 } from "../config/atlas";
 import { getProgress, type QuizSession } from "../lib/quiz-api";
 import type { ChatConversation } from "../lib/chat-api";
+import { listUserNotes, type NoteRow } from "../lib/notes";
+import { markupToEditableHtml, parseStickyNoteContent } from "../lib/sticky-note-content";
 import { supabase } from "../lib/supabase";
+import { ThemeToggle } from "./ThemeToggle";
 
 const AnatomyScene = dynamic(
   () => import("./AnatomyScene").then((module) => module.AnatomyScene),
@@ -147,6 +151,7 @@ export function ProgressDashboard() {
   const [modelError, setModelError] = useState<string | null>(null);
   const [quizSessions, setQuizSessions] = useState<QuizSession[]>([]);
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
+  const [savedNotes, setSavedNotes] = useState<NoteRow[]>([]);
   const [progressSummary, setProgressSummary] = useState({
     organs_studied: 0,
     quiz_accuracy: 0,
@@ -175,6 +180,7 @@ export function ProgressDashboard() {
         if (active) {
           setQuizSessions([]);
           setChatConversations([]);
+          setSavedNotes([]);
           setProgressSummary({ organs_studied: 0, quiz_accuracy: 0, completed_quizzes: 0 });
           setProgressState("signed-out");
         }
@@ -183,10 +189,11 @@ export function ProgressDashboard() {
 
       setProgressState("loading");
       try {
-        const progress = await getProgress();
+        const [progress, notes] = await Promise.all([getProgress(), listUserNotes()]);
         if (!active) return;
         setQuizSessions(progress.quiz_sessions);
         setChatConversations(progress.chat_conversations);
+        setSavedNotes(notes);
         setProgressSummary(progress.summary);
         setProgressState("signed-in");
       } catch {
@@ -257,6 +264,7 @@ export function ProgressDashboard() {
         <div className="progress-topbar-status">
           <span className="status-dot" /> {progressState === "signed-in" ? "SAVED PROGRESS" : progressState === "loading" ? "LOADING PROGRESS" : "SIGN IN REQUIRED"}
         </div>
+        <ThemeToggle />
         <Link href="/" className="progress-back-link">
           <ArrowLeft size={15} /> BACK TO LAB
         </Link>
@@ -354,6 +362,27 @@ export function ProgressDashboard() {
                   </article>
                 );
               })
+            )}
+          </SessionColumn>
+
+          <SessionColumn title="Saved notes" eyebrow="ANATOMY NOTES" icon={StickyNote}>
+            {progressState === "loading" ? (
+              <article className="progress-empty-state"><span>Loading saved notes…</span></article>
+            ) : progressState === "signed-out" ? (
+              <article className="progress-empty-state"><span>Sign in to view saved notes.</span></article>
+            ) : savedNotes.length === 0 ? (
+              <article className="progress-empty-state"><span>No saved notes yet.</span></article>
+            ) : (
+              savedNotes.map((note) => (
+                <article className="progress-session-item" key={note.id}>
+                  <div className="progress-session-item-icon note"><StickyNote size={15} /></div>
+                  <div className="progress-session-item-copy">
+                    <strong>{note.organ}</strong>
+                    <span dangerouslySetInnerHTML={{ __html: markupToEditableHtml(parseStickyNoteContent(note.note).content) }} />
+                  </div>
+                  <div className="progress-session-meta"><span>{formatChatDate(note.updated_at)}</span></div>
+                </article>
+              ))
             )}
           </SessionColumn>
         </section>

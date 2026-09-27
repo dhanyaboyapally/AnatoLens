@@ -1,17 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, GripVertical, Pencil, Plus, StickyNote, X } from "lucide-react";
+import { Bold, Check, GripVertical, Italic, Pencil, Plus, StickyNote, Strikethrough, Underline, X } from "lucide-react";
 import {
   createUserNote,
   listUserNotes,
   updateUserNote,
   type NoteRow,
 } from "../../../lib/notes";
+import {
+  editableHtmlToMarkup,
+  markupToEditableHtml,
+  parseStickyNoteContent,
+  serializeStickyNoteContent,
+} from "../../../lib/sticky-note-content";
 import { supabase } from "../../../lib/supabase";
 
-type NoteOwner = { id: string; name: string };
+type NoteOwner = { id: string; name: string; parentId?: string | null };
+
+const EMPTY_STRUCTURES: readonly NoteOwner[] = [];
 
 type Note = {
   id: string;
@@ -22,6 +30,7 @@ type Note = {
   y: number;
   color: string;
   updatedAt: string;
+  completed: boolean;
   isDraft?: boolean;
 };
 
@@ -33,17 +42,35 @@ const NOTE_COLORS = [
   { bg: "#e9d5ff", border: "#a855f7", text: "#4a1d96", name: "purple" },
 ];
 
-function mapNote(row: NoteRow, index: number): Note {
+function mapNote(row: NoteRow, index: number, structureById: ReadonlyMap<string, NoteOwner>): Note {
+  const content = parseStickyNoteContent(row.note);
   return {
     id: row.id,
     structureId: row.organ,
-    structureName: row.organ,
-    text: row.note,
+    structureName: structureById.get(row.organ)?.name ?? row.organ,
+    text: content.content,
     x: Math.max(12, window.innerWidth / 2 - 100),
     y: 110 + (index % 4) * 18,
     color: NOTE_COLORS[index % NOTE_COLORS.length].name,
     updatedAt: row.updated_at,
+    completed: content.completed,
   };
+}
+
+function noteMatchesStructure(
+  noteId: string,
+  selectedId: string,
+  structureById: ReadonlyMap<string, NoteOwner>,
+) {
+  const hasAncestor = (id: string, ancestorId: string) => {
+    let parentId = structureById.get(id)?.parentId;
+    while (parentId) {
+      if (parentId === ancestorId) return true;
+      parentId = structureById.get(parentId)?.parentId;
+    }
+    return false;
+  };
+  return noteId === selectedId || hasAncestor(noteId, selectedId) || hasAncestor(selectedId, noteId);
 }
 
 function StickyNoteCard({
@@ -67,10 +94,10 @@ function StickyNoteCard({
   const [position, setPosition] = useState({ x: note.x, y: note.y });
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
-  const textRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   const startDragging = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (note.isDraft || (event.target as HTMLElement).closest("button, textarea")) return;
+    if (note.isDraft || (event.target as HTMLElement).closest("button, textarea, [contenteditable='true']")) return;
     dragging.current = true;
     offset.current = {
       x: event.clientX - position.x,
@@ -94,8 +121,16 @@ function StickyNoteCard({
   };
 
   const saveEdit = async () => {
-    await onUpdate(note.id, draft, position.x, position.y);
-    setEditing(false);
+    const text = editorRef.current
+      ? editableHtmlToMarkup(editorRef.current.innerHTML)
+      : draft;
+    setDraft(text);
+    try {
+      await onUpdate(note.id, text, position.x, position.y);
+      setEditing(false);
+    } catch {
+      // Keep the editor open so a failed save can be corrected and retried.
+    }
   };
 
   const cancelEdit = () => {
@@ -109,8 +144,18 @@ function StickyNoteCard({
   };
 
   useEffect(() => {
-    if (editing) textRef.current?.focus();
-  }, [editing]);
+    if (!editing || !editorRef.current) return;
+    editorRef.current.innerHTML = markupToEditableHtml(note.text);
+    editorRef.current.focus();
+  }, [editing, note.text]);
+
+  const applyFormat = (command: "bold" | "italic" | "underline" | "strikeThrough") => {
+    editorRef.current?.focus();
+    document.execCommand(command);
+    if (editorRef.current) {
+      setDraft(editableHtmlToMarkup(editorRef.current.innerHTML));
+    }
+  };
 
   return (
     <motion.div
@@ -151,21 +196,36 @@ function StickyNoteCard({
       </div>
       <div className="sticky-note-body">
         {editing ? (
-          <textarea
-            ref={textRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+          <>
+            <div className="sticky-note-format-toolbar" role="toolbar" aria-label="Format note text">
+              <button type="button" aria-label="Bold" title="Bold" onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat("bold")}><Bold size={14} /></button>
+              <button type="button" aria-label="Italic" title="Italic" onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat("italic")}><Italic size={14} /></button>
+              <button type="button" aria-label="Underline" title="Underline" onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat("underline")}><Underline size={14} /></button>
+              <button type="button" aria-label="Strikethrough" title="Strikethrough" onMouseDown={(event) => event.preventDefault()} onClick={() => applyFormat("strikeThrough")}><Strikethrough size={14} /></button>
+            </div>
+            <div
+              ref={editorRef}
+              className="sticky-note-editor"
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-label="Sticky note text"
+              aria-multiline="true"
+              onInput={(event) => setDraft(editableHtmlToMarkup(event.currentTarget.innerHTML))}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && event.metaKey) void saveEdit();
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void saveEdit();
             }}
-            rows={4}
-            placeholder="Write a note…"
-            style={{ color: color.text, caretColor: color.border }}
-          />
+              data-placeholder="Write a note…"
+              style={{ color: color.text, caretColor: color.border }}
+            />
+          </>
         ) : (
-          <p style={{ color: color.text }} onDoubleClick={() => { setDraft(note.text); setEditing(true); }}>
-            {note.text || <span className="sticky-note-placeholder">Double-click to edit…</span>}
-          </p>
+          <div
+            className="sticky-note-rendered-content"
+            style={{ color: color.text }}
+            onDoubleClick={() => { setDraft(note.text); setEditing(true); }}
+            dangerouslySetInnerHTML={{ __html: note.text ? markupToEditableHtml(note.text) : '<span class="sticky-note-placeholder">Double-click to edit…</span>' }}
+          />
         )}
       </div>
     </motion.div>
@@ -175,67 +235,73 @@ function StickyNoteCard({
 export function StickyNotesLayer({
   selectedStructure,
   userId,
+  structures = EMPTY_STRUCTURES,
 }: {
   selectedStructure?: NoteOwner | null;
   userId?: string | null;
+  structures?: readonly NoteOwner[];
 }) {
   selectedStructure ??= null;
   userId ??= null;
   const [notes, setNotes] = useState<Note[]>([]);
+  const [notesOwnerId, setNotesOwnerId] = useState<string | null>(null);
   const [dismissedNoteIds, setDismissedNoteIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [colorIndex, setColorIndex] = useState(0);
 
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resolvedUserId, setResolvedUserId] = useState(userId);
-  const activeUserId = userId ?? resolvedUserId;
+  const [loadErrorForUserId, setLoadErrorForUserId] = useState<string | null>(null);
+  const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
+  const activeUserId = userId === undefined ? resolvedUserId : userId;
+  const structureById = useMemo(
+    () => new Map(structures.map((structure) => [structure.id, structure])),
+    [structures],
+  );
 
   useEffect(() => {
-    setResolvedUserId(userId);
-    if (userId || !supabase) return;
+    if (userId !== undefined || !supabase) return;
 
+    let active = true;
     void supabase.auth.getUser().then(({ data }) => {
-      setResolvedUserId(data.user?.id ?? null);
+      if (active) setResolvedUserId(data.user?.id ?? null);
     });
     const { data: authSubscription } = supabase.auth.onAuthStateChange(
       (_event, session) => setResolvedUserId(session?.user?.id ?? null),
     );
-    return () => authSubscription.subscription.unsubscribe();
+    return () => {
+      active = false;
+      authSubscription.subscription.unsubscribe();
+    };
   }, [userId]);
 
   useEffect(() => {
     let active = true;
-    if (!activeUserId) {
-      setNotes([]);
-      setDismissedNoteIds(new Set());
-      setError(null);
-      return () => {
-        active = false;
-      };
-    }
+    if (!activeUserId) return;
 
-    setLoading(true);
     void listUserNotes()
       .then((rows) => {
         if (active) {
-          setNotes(rows.map(mapNote));
+          setNotes(rows.map((row, index) => mapNote(row, index, structureById)));
+          setNotesOwnerId(activeUserId);
           setDismissedNoteIds(new Set());
+          setError(null);
+          setLoadErrorForUserId(null);
         }
       })
       .catch((reason: unknown) => {
-        if (active) setError(reason instanceof Error ? reason.message : "Unable to load notes.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setError(reason instanceof Error ? reason.message : "Unable to load notes.");
+          setLoadErrorForUserId(activeUserId);
+        }
       });
 
     return () => {
       active = false;
     };
-  }, [activeUserId]);
+  }, [activeUserId, structureById]);
 
   const addNote = async () => {
     if (!selectedStructure || !activeUserId) {
@@ -253,6 +319,7 @@ export function StickyNotesLayer({
       y: 110,
       color: color.name,
       updatedAt: "",
+      completed: false,
       isDraft: true,
     }]);
     setColorIndex((value) => value + 1);
@@ -266,6 +333,7 @@ export function StickyNotesLayer({
 
   const dismissNote = useCallback((id: string) => {
     setDismissedNoteIds((current) => new Set(current).add(id));
+    setFocusedNoteId((current) => current === id ? null : current);
   }, []);
 
   const reopenNote = useCallback((id: string) => {
@@ -276,7 +344,7 @@ export function StickyNotesLayer({
     });
   }, []);
 
-  const cancelEdit = useCallback((_id: string) => {
+  const cancelEdit = useCallback(() => {
     setError(null);
   }, []);
 
@@ -289,10 +357,10 @@ export function StickyNotesLayer({
         if (!text.trim()) {
           throw new Error("Write something in the note before saving.");
         }
-        const row = await createUserNote(note.structureId, text);
+        const row = await createUserNote(note.structureId, serializeStickyNoteContent(text, note.completed));
         setNotes((current) => current.map((item) => item.id === id
           ? {
-            ...mapNote(row, current.indexOf(item)),
+            ...mapNote(row, current.indexOf(item), structureById),
             x: note.x,
             y: note.y,
             color: note.color,
@@ -300,21 +368,25 @@ export function StickyNotesLayer({
           }
           : item));
       } else {
-        const row = await updateUserNote(id, text);
+        const row = await updateUserNote(id, serializeStickyNoteContent(text, note.completed));
         setNotes((current) => current.map((item) => item.id === id
-          ? { ...item, text: row.note, x, y, updatedAt: row.updated_at }
+          ? { ...item, text, x, y, updatedAt: row.updated_at }
           : item));
       }
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "Unable to update note.");
       throw reason;
     }
-  }, [notes]);
+  }, [notes, structureById]);
 
+  const userNotes = activeUserId && notesOwnerId === activeUserId ? notes : [];
+  const loading = Boolean(activeUserId && notesOwnerId !== activeUserId && loadErrorForUserId !== activeUserId);
   const visibleNotes = selectedStructure
-    ? notes.filter((note) => note.structureId === selectedStructure.id)
-    : [];
-  const floatingNotes = visibleNotes.filter((note) => !dismissedNoteIds.has(note.id));
+    ? userNotes.filter((note) => noteMatchesStructure(note.structureId, selectedStructure.id, structureById))
+    : userNotes;
+  const floatingNotes = visibleNotes.filter((note) =>
+    !dismissedNoteIds.has(note.id) && (selectedStructure || note.id === focusedNoteId),
+  );
 
   return (
     <>
@@ -332,22 +404,27 @@ export function StickyNotesLayer({
           {open && (
             <motion.div className="sticky-notes-menu" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
               <span className="sticky-notes-menu-label">
-                {selectedStructure ? `${selectedStructure.name} NOTES` : "SIGN IN AND SELECT AN ORGAN"}
+                {selectedStructure ? `${selectedStructure.name} NOTES` : "YOUR SAVED NOTES"}
               </span>
               <p className={`sticky-notes-status ${activeUserId ? "ready" : "needs-auth"}`}>
                 {activeUserId ? "ACCOUNT SYNC ACTIVE" : "SIGN IN REQUIRED TO SAVE NOTES"}
               </p>
               {loading && <p className="sticky-notes-empty">Loading saved notes…</p>}
-              {selectedStructure && (
-                <div className="sticky-notes-list" aria-label={`Saved notes for ${selectedStructure.name}`}>
-                  {visibleNotes.length > 0 ? visibleNotes.map((note) => {
+              {activeUserId && (
+                <div className="sticky-notes-list" aria-label={selectedStructure ? `Saved notes for ${selectedStructure.name}` : "All saved notes"}>
+                  {loading ? (
+                    <p className="sticky-notes-empty">Loading saved notes…</p>
+                  ) : visibleNotes.length > 0 ? visibleNotes.map((note) => {
                     const color = NOTE_COLORS.find((item) => item.name === note.color) ?? NOTE_COLORS[0];
                     return (
                       <button
                         type="button"
                         className="sticky-notes-list-item"
                         key={note.id}
-                        onClick={() => reopenNote(note.id)}
+                        onClick={() => {
+                          setFocusedNoteId(note.id);
+                          reopenNote(note.id);
+                        }}
                         aria-label={`Show note for ${note.structureName}`}
                       >
                         <span className="sticky-notes-list-dot" style={{ backgroundColor: color.border }} />
@@ -368,7 +445,7 @@ export function StickyNotesLayer({
                 <Plus size={13} /> ADD NOTE
               </button>
               {error && <p className="sticky-notes-error" role="alert">{error}</p>}
-              {visibleNotes.length > 0 && <small>{visibleNotes.length} note{visibleNotes.length === 1 ? "" : "s"} for this structure</small>}
+              {visibleNotes.length > 0 && <small>{visibleNotes.length} saved note{visibleNotes.length === 1 ? "" : "s"}</small>}
             </motion.div>
           )}
         </AnimatePresence>
