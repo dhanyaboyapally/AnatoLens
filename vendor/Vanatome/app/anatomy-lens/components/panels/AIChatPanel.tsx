@@ -36,6 +36,13 @@ function messageText(message: { parts: Array<{ type: string; text?: string }> })
     .join("");
 }
 
+function hideMermaidSource(text: string) {
+  return text
+    .replace(/```mermaid\s*[\s\S]*?```/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 type ChatPart = {
   type: string;
   text?: string;
@@ -147,7 +154,7 @@ function MarkdownText({ text }: { text: string }) {
 
 function MessageBubble({ message }: { message: { role: string; parts: ChatPart[] } }) {
   const isAI = message.role === "assistant";
-  const content = messageText(message);
+  const content = isAI ? hideMermaidSource(messageText(message)) : messageText(message);
   const richParts = richMessageParts(message.parts);
 
   if (!content && richParts.length === 0) return null;
