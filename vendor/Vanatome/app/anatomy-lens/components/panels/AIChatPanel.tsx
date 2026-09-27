@@ -2,11 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, type UIMessage } from "ai";
 import { Brain, Send, Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { AnatomyStructure } from "../../../data/anatomy";
+import {
+  createChatConversation,
+  getChatConversation,
+  listChatConversations,
+  saveChatMessage,
+} from "../../../lib/chat-api";
 import type { LearningResource } from "../../../lib/learning-resources";
+import { supabase } from "../../../lib/supabase";
 import { LearningResourceCard } from "./LearningResourceCard";
 import { MermaidDiagram } from "./MermaidDiagram";
 
@@ -200,6 +207,10 @@ export function AIChatPanel({
   onFocusStructure = () => false,
 }: AIChatPanelProps) {
   const [input, setInput] = useState("");
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const conversationPromiseRef = useRef<Promise<string | null> | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const catalog = useMemo<ChatStructure[]>(
     () => availableStructures.map(({ id, name, system, layer, parentId, summary, function: structureFunction, fact }) => ({
@@ -218,9 +229,22 @@ export function AIChatPanel({
     () => catalog.find((structure) => structure.id === selectedStructure?.id) ?? null,
     [catalog, selectedStructure?.id],
   );
-  const { messages, sendMessage, status, error } = useChat({
+
+  const persistMessage = useCallback(async (
+    currentConversationId: string | null,
+    message: { role: "user" | "assistant" | "system"; content: string; parts: unknown[] },
+  ) => {
+    if (!currentConversationId) return;
+    try {
+      await saveChatMessage(currentConversationId, message);
+    } catch (error) {
+      setPersistenceError(error instanceof Error ? error.message : "Unable to save chat history.");
+    }
+  }, []);
+
+  const { messages, sendMessage, setMessages, status, error } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
-    onFinish: ({ message }) => {
+    onFinish: ({ message, isAbort, isDisconnect, isError }) => {
       for (const part of message.parts) {
         const toolPart = part as {
           type?: string;
@@ -236,9 +260,97 @@ export function AIChatPanel({
           onFocusStructure(toolPart.output.structureId, toolPart.output.layer);
         }
       }
+      if (!isAbort && !isDisconnect && !isError) {
+        void persistMessage(conversationIdRef.current, {
+          role: "assistant",
+          content: messageText(message),
+          parts: message.parts,
+        });
+      }
     },
   });
   const isThinking = status === "submitted" || status === "streaming";
+
+  const ensureConversation = useCallback(async (title?: string) => {
+    if (conversationId) return conversationId;
+    if (!supabase) return null;
+    if (!conversationPromiseRef.current) {
+      conversationPromiseRef.current = createChatConversation({
+        title: title?.slice(0, 120),
+        selectedStructureId: selectedContext?.id ?? null,
+        selectedStructureName: selectedContext?.name ?? null,
+        mode,
+      })
+        .then((conversation) => {
+          conversationIdRef.current = conversation.id;
+          setConversationId(conversation.id);
+          setPersistenceError(null);
+          return conversation.id;
+        })
+        .catch((reason: unknown) => {
+          setPersistenceError(reason instanceof Error ? reason.message : "Unable to save chat history.");
+          return null;
+        })
+        .finally(() => {
+          conversationPromiseRef.current = null;
+        });
+    }
+    return conversationPromiseRef.current;
+  }, [conversationId, mode, selectedContext]);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    let active = true;
+    const loadLatestConversation = async (signedIn: boolean) => {
+      if (!signedIn) {
+        if (active) {
+          conversationIdRef.current = null;
+          setConversationId(null);
+          setPersistenceError(null);
+          setMessages([]);
+        }
+        return;
+      }
+
+      try {
+        const conversations = await listChatConversations();
+        if (!active) return;
+        const latest = conversations[0];
+        if (!latest) {
+          conversationIdRef.current = null;
+          setConversationId(null);
+          return;
+        }
+        const detail = await getChatConversation(latest.id);
+        if (!active) return;
+        setConversationId(detail.conversation.id);
+        conversationIdRef.current = detail.conversation.id;
+        setMessages(detail.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          parts: message.parts,
+        })) as UIMessage[]);
+        setPersistenceError(null);
+      } catch (reason: unknown) {
+        if (active) {
+          setPersistenceError(reason instanceof Error ? reason.message : "Unable to load chat history.");
+        }
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data }) => {
+      void loadLatestConversation(Boolean(data.session));
+    });
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(
+      (_event, session) => void loadLatestConversation(Boolean(session)),
+    );
+
+    return () => {
+      active = false;
+      authSubscription.subscription.unsubscribe();
+    };
+  }, [setMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -249,6 +361,12 @@ export function AIChatPanel({
     if (!message || isThinking) return;
 
     setInput("");
+    const currentConversationId = await ensureConversation(message);
+    await persistMessage(currentConversationId, {
+      role: "user",
+      content: message,
+      parts: [{ type: "text", text: message }],
+    });
     await sendMessage(
       { text: message },
       {
@@ -260,7 +378,7 @@ export function AIChatPanel({
         },
       },
     );
-  }, [catalog, input, isThinking, mode, selectedContext, sendMessage, visibleSystems]);
+  }, [catalog, ensureConversation, input, isThinking, mode, persistMessage, selectedContext, sendMessage, visibleSystems]);
 
   return (
     <div className="flex flex-col h-full">
@@ -273,7 +391,9 @@ export function AIChatPanel({
             <span className="text-sm font-semibold text-white">AnatomyAI</span>
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           </div>
-          <p className="text-xs text-gray-500">Your anatomy tutor</p>
+          <p className="text-xs text-gray-500">
+            {persistenceError ? "Chat history unavailable" : "Your anatomy tutor"}
+          </p>
         </div>
       </div>
 
