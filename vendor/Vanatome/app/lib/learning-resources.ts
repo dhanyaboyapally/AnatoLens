@@ -99,7 +99,7 @@ export async function searchLearningResources(
   }
 
   const items = type === "image"
-    ? normalizeImageResults(payload.image_results)
+    ? normalizeImageResults(payload.images_results)
     : normalizeVideoResults(payload.video_results);
   return {
     available: true,
